@@ -3,7 +3,6 @@ use once_cell::sync::Lazy;
 
 use crate::models::{building as bldg, core, iur::uro, BoundedBy};
 
-
 #[citygml_feature(name = "uro:UndergroundBuilding")]
 pub struct UndergroundBuilding {
     #[citygml(path = b"bldg:class")]

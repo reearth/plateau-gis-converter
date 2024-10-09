@@ -256,7 +256,7 @@ mod tests {
                 .map(|id| Some(LocalId::new(id)))
                 .collect::<Vec<_>>()
                 .as_slice(),
-                ["cc", "dd", "ee", "zz"]
+            ["cc", "dd", "ee", "zz"]
                 .into_iter()
                 .map(|id| SurfaceSpan {
                     id: LocalId::new(id),

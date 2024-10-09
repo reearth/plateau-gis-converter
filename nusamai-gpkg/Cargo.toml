@@ -1,14 +1,14 @@
 [package]
+edition = "2021"
 name = "nusamai-gpkg"
 version = "0.1.0"
-edition = "2021"
 
 [dependencies]
-sqlx = { version = "0.8.0", features = ["sqlite", "runtime-tokio"] }
 flatgeom = "0.0.2"
+indexmap = "2.2.6"
+sqlx = { version = "0.8.0", features = ["runtime-tokio", "sqlite"] }
 thiserror = "1.0.58"
 url = "2.5.0"
-indexmap = "2.2.6"
 
 [dev-dependencies]
 tokio = { version = "1.36", features = ["full"] }

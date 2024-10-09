@@ -462,4 +462,3 @@ pub static BUILDING_SURFACE_MAPPINGS: Lazy<
     };
     Box::new(result) as Box<dyn Fn(&BoundarySurfaceProperty) -> Option<BoundedBy> + Send + Sync>
 });
-

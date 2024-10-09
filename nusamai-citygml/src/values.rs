@@ -368,7 +368,7 @@ impl LocalId {
         Self(s.as_ref().to_string())
     }
 
-    pub fn value(&self) -> String{
+    pub fn value(&self) -> String {
         self.0.clone()
     }
 }
