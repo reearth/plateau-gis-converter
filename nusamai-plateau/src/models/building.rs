@@ -1,6 +1,7 @@
 use nusamai_citygml::{
     citygml_feature, citygml_property, CityGmlElement, Code, GYear, Length, MeasureOrNullList,
 };
+
 use once_cell::sync::Lazy;
 
 use crate::BoundedBy;
@@ -461,3 +462,4 @@ pub static BUILDING_SURFACE_MAPPINGS: Lazy<
     };
     Box::new(result) as Box<dyn Fn(&BoundarySurfaceProperty) -> Option<BoundedBy> + Send + Sync>
 });
+

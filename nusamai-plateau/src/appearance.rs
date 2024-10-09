@@ -2,9 +2,9 @@
 
 use std::hash::{Hash, Hasher};
 
+use flatgeom::LineString2;
 use hashbrown::HashMap;
 use nusamai_citygml::{appearance::TextureAssociation, Color, LocalId, SurfaceSpan};
-use nusamai_geometry::LineString2;
 use url::Url;
 
 use crate::models::appearance::{self, ParameterizedTexture, SurfaceDataProperty, X3DMaterial};
@@ -256,7 +256,7 @@ mod tests {
                 .map(|id| Some(LocalId::new(id)))
                 .collect::<Vec<_>>()
                 .as_slice(),
-            ["cc", "dd", "ee", "zz"]
+                ["cc", "dd", "ee", "zz"]
                 .into_iter()
                 .map(|id| SurfaceSpan {
                     id: LocalId::new(id),

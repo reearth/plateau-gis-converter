@@ -88,3 +88,4 @@ pub static WATER_BODY_SURFACE_MAPPINGS: Lazy<
     Box::new(result)
         as Box<dyn Fn(&WaterBoundarySurfaceProperty) -> Option<BoundedBy> + Send + Sync>
 });
+
