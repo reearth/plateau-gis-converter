@@ -396,14 +396,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
 
         match geomtype {
             Solid => self.parse_solid_prop(lod, feature_id, feature_type)?,
-            MultiSurface => {
-                self.parse_multi_surface_prop(lod, feature_id, feature_type)?
-            }
+            MultiSurface => self.parse_multi_surface_prop(lod, feature_id, feature_type)?,
             Surface => self.parse_surface_prop(lod, feature_id, feature_type)?, // FIXME
             Geometry => self.parse_geometry_prop(lod, feature_id, feature_type)?, // FIXME: not only surfaces
             Triangulated => self.parse_triangulated_prop(lod, feature_id, feature_type)?, // FIXME
-            Point => todo!(),      // FIXME
-            MultiPoint => todo!(), // FIXME
+            Point => todo!(),                                                     // FIXME
+            MultiPoint => todo!(),                                                // FIXME
             MultiCurve => {
                 log::warn!("CompositeCurve is not supported yet.");
                 self.skip_current_element()?;
