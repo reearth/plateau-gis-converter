@@ -16,7 +16,7 @@ log = "0.4.22"
 nusamai-citygml = { path = "../nusamai-citygml", features = ["serde"] }
 once_cell = "1.20.2"
 quick-xml = "0.37.1"
-serde = { version = "1.0.214", features = ["derive", "rc"], optional = true }
+serde = { version = "1.0.215", features = ["derive", "rc"], optional = true }
 stretto = "0.8.4"
 url = "2.5.3"
 
