@@ -950,6 +950,9 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 );
                             }
                         }
+                        (Bound(GML31_NS), b"surfaceMember") => {
+                            (surface_id, _) = self.parse_surface()?;
+                        }
                         // (Bound(GML_NS), b"TriangulatedSurface") =>
                         // (Bound(GML_NS), b"Tin") =>
                         _ => {
