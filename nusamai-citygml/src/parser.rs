@@ -750,7 +750,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         (Bound(GML31_NS), b"Tin") => self.parse_triangulated_surface()?,
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Unexpected element <{}>",
+                                "Unexpected element <{}> by parse triangulated prop",
                                 String::from_utf8_lossy(localname.as_ref())
                             )))
                         }
@@ -814,7 +814,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         (Bound(GML31_NS), b"Triangle") => self.parse_polygon()?,
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Unexpected element <{}>",
+                                "Unexpected element <{}> by parsing triangle patch array",
                                 String::from_utf8_lossy(localname.as_ref())
                             )))
                         }
@@ -843,7 +843,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             let (surface_id, _) = self.parse_surface()?;
                             surface_id
                         }
-                        _ => return Err(ParseError::SchemaViolation("Unexpected element".into())),
+                        _ => return Err(ParseError::SchemaViolation("Unexpected element. Because only surface member".into())),
                     };
                 }
                 Ok(Event::End(_)) => return Ok(surface_id),
@@ -878,7 +878,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Unexpected element <{}>",
+                                "Unexpected element <{}> by parsing composite surface",
                                 String::from_utf8_lossy(localname.as_ref())
                             )))
                         }
@@ -954,7 +954,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         // (Bound(GML_NS), b"Tin") =>
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Unexpected element <{}>",
+                                "Unexpected element <{}> by parsing surface",
                                 String::from_utf8_lossy(localname.as_ref())
                             )))
                         }
@@ -1004,7 +1004,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 }
                             }
                         }
-                        _ => return Err(ParseError::SchemaViolation("Unexpected element".into())),
+                        _ => return Err(ParseError::SchemaViolation("Unexpected element. Because only base surface".into())),
                     };
                 }
                 Ok(Event::End(_)) => return Ok(surface_id),
@@ -1208,7 +1208,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 Ok(Event::Start(start)) => {
                     if inside_coordinates {
                         return Err(ParseError::SchemaViolation(format!(
-                            "Unexpected elements <{}>",
+                            "Unexpected elements <{}> inside <app:textureCoordinates>",
                             String::from_utf8_lossy(start.name().as_ref())
                         )));
                     }
@@ -1234,7 +1234,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Unexpected elements <{}>",
+                                "Unexpected elements <{}> inside <app:TexCoordList>",
                                 String::from_utf8_lossy(start.name().as_ref())
                             )));
                         }
