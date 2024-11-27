@@ -843,7 +843,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             let (surface_id, _) = self.parse_surface()?;
                             surface_id
                         }
-                        _ => return Err(ParseError::SchemaViolation("Unexpected element. Because only surface member".into())),
+                        _ => {
+                            return Err(ParseError::SchemaViolation(
+                                "Unexpected element. Because only surface member".into(),
+                            ))
+                        }
                     };
                 }
                 Ok(Event::End(_)) => return Ok(surface_id),
@@ -870,11 +874,15 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         if nsres == Bound(XLINK_NS) && localname.as_ref() == b"href" {
                             let href = String::from_utf8_lossy(attr.value.as_ref()).to_string();
                             surface_id = Some(LocalId::from(href));
+                            break;
                         }
                     }
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            self.parse_surface()?;
+                            let (surface_member_id, _) = self.parse_surface()?;
+                            if surface_id.is_none() {
+                                surface_id = surface_member_id;
+                            }
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -892,7 +900,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             .push(id.clone());
                     }
                 }
-                Ok(Event::End(_)) => return Ok(result),
+                Ok(Event::End(end)) => {
+                    let (nsres, localname) = self.reader.resolve_element(end.name());
+                    if nsres == Bound(GML31_NS) && localname.as_ref() == b"CompositeSurface" {
+                        return Ok(result);
+                    }
+                }
                 Ok(Event::Text(_)) => {
                     return Err(ParseError::SchemaViolation(
                         "Unexpected text content".into(),
@@ -1004,10 +1017,15 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                     let href =
                                         String::from_utf8_lossy(attr.value.as_ref()).to_string();
                                     surface_id = Some(LocalId::from(href));
+                                    break;
                                 }
                             }
                         }
-                        _ => return Err(ParseError::SchemaViolation("Unexpected element. Because only base surface".into())),
+                        _ => {
+                            return Err(ParseError::SchemaViolation(
+                                "Unexpected element. Because only base surface".into(),
+                            ))
+                        }
                     };
                 }
                 Ok(Event::End(_)) => return Ok(surface_id),
