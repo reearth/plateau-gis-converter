@@ -1106,9 +1106,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         let mut depth = 1;
         loop {
             match self.reader.read_resolved_event_into(&mut self.state.buf1) {
-                Ok((Bound(GML31_NS), Event::Start(start))) => {
+                Ok((Bound(GML31_NS), Event::Start(_))) => {
                     depth += 1;
-                    println!("depth: {}, start: {:?}", depth, start.local_name());
                 }
                 Ok((_, Event::Start(start))) => {
                     return Err(ParseError::SchemaViolation(format!(
@@ -1131,7 +1130,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     }
                     // parse coordinate sequence
                     self.state.fp_buf.clear();
-                    for s in text.unescape().unwrap().split_ascii_whitespace() {
+                    let unescaped_text = text
+                        .unescape()
+                        .map_err(|e| ParseError::InvalidValue(format!("Unescape error: {}", e)))?;
+                    for s in unescaped_text.split_ascii_whitespace() {
                         if let Ok(v) = s.parse() {
                             self.state.fp_buf.push(v);
                         } else {
@@ -1286,7 +1288,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
 
                     // parse coordinate sequence
                     self.state.fp_buf.clear();
-                    for s in text.unescape().unwrap().split_ascii_whitespace() {
+                    let unescaped_text = text
+                        .unescape()
+                        .map_err(|e| ParseError::InvalidValue(format!("Unescape error: {}", e)))?;
+                    for s in unescaped_text.split_ascii_whitespace() {
                         if let Ok(v) = s.parse() {
                             self.state.fp_buf.push(v);
                         } else {
