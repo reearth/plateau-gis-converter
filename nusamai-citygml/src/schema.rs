@@ -27,10 +27,13 @@ impl TypeDef {
         match self {
             TypeDef::Feature(ft) => ft.attributes.clone(),
             TypeDef::Data(dt) => dt.attributes.clone(),
-            TypeDef::Property(pt) => pt.members.iter().fold(Map::default(), |mut acc, attr| {
-                acc.insert("".to_string(), attr.clone());
-                acc
-            }),
+            TypeDef::Property(pt) => {
+                let mut map = Map::default();
+                for (i, attr) in pt.members.iter().enumerate() {
+                    map.insert(i.to_string(), attr.clone());
+                }
+                map
+            }
         }
     }
 
