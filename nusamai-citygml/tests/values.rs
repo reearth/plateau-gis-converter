@@ -349,7 +349,14 @@ fn feature_type_issue_with_bounded_by_structure() {
             let geom_ref = &root.members[0].building.as_ref().unwrap().bounded_by[0].ground_surface
                 [0]
             .lod2_multi_surface[0];
-            assert_eq!(geom_ref.feature_type, Some("bldg:Building".to_string()));
+            // feature_type should be the element containing the geometry (GroundSurface),
+            // not the parent feature (Building)
+            assert_eq!(
+                geom_ref.feature_type,
+                Some("bldg:GroundSurface".to_string())
+            );
+            // feature_id should be from the parent with gml:id (Building)
+            assert_eq!(geom_ref.feature_id, Some("test-building-id".to_string()));
         }
         Err(e) => panic!("Err: {e:?}"),
     }

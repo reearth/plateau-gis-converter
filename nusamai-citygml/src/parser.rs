@@ -114,7 +114,7 @@ impl Default for ParseContext<'_> {
     }
 }
 
-#[allow(unknown_lints, elided_named_lifetimes)]
+#[allow(unknown_lints, mismatched_lifetime_syntaxes)]
 impl<'a> CityGmlReader<'a> {
     pub fn new(context: ParseContext<'a>) -> Self {
         Self {
@@ -122,7 +122,7 @@ impl<'a> CityGmlReader<'a> {
         }
     }
 
-    #[allow(elided_named_lifetimes)]
+    #[allow(mismatched_lifetime_syntaxes)]
     pub fn start_root<'b: 'a, R: BufRead>(
         &'a mut self,
         reader: &'b mut quick_xml::NsReader<R>,
@@ -385,7 +385,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         collector.into_geometries(envelope_crs_uri)
     }
 
-    /// Extract feature ID and feature type from the parent element's path.
+    /// Extract feature ID and feature type from the current parsing context.
     ///
     /// # Important
     /// The returned `feature_type` is **guaranteed to be a CityGML Feature Type** defined in the
@@ -399,18 +399,24 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
     /// **Therefore, arbitrary XML tag names will never be returned as feature_type.**
     ///
     /// # Returns
-    /// * `(Some(id), Some(type))` - When the parent element has a gml:id attribute
-    /// * `(None, Some(type))` - When the parent element has no gml:id attribute
+    /// * `(Some(id), Some(type))` - feature_id from parent with gml:id, feature_type from current element
+    /// * `(None, Some(type))` - No parent with gml:id, feature_type from current element
     /// * `(None, None)` - When extraction fails
+    ///
+    /// # Behavior
+    /// - `feature_id`: Extracted from the nearest parent element with gml:id attribute (from feature_stack)
+    /// - `feature_type`: Extracted from the current element's tag name (the element containing the geometry)
+    ///
+    /// This ensures that for structures like `Building[gml:id=X] → boundedBy → GroundSurface → geometry`:
+    /// - `feature_id` = "X" (from Building)
+    /// - `feature_type` = "bldg:GroundSurface" (from the current element with geometry)
     pub fn extract_feature_id_and_type(&self) -> (Option<String>, Option<String>) {
-        // Check if there's a feature in the stack
-        if let Some((feature_id, feature_type, _)) = self.state.feature_stack.last() {
-            return (Some(feature_id.clone()), Some(feature_type.clone()));
-        }
+        // Extract feature_id from the feature stack (nearest parent with gml:id)
+        let feature_id = self.state.feature_stack.last().map(|(id, _, _)| id.clone());
 
-        // No feature found - try to extract from current path as fallback
+        // Extract feature_type from current element's path
         if self.state.path_stack_indices.len() < 2 {
-            return (None, None);
+            return (feature_id, None);
         }
 
         let paths = String::from_utf8_lossy(self.state.path_buf.as_ref());
@@ -418,19 +424,20 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         let end = self.state.path_stack_indices[self.state.path_stack_indices.len() - 1];
         let before_tag = &paths[start + 1..end];
 
-        // Handle paths like "bldg:GroundSurface" without attributes or "bldg:GroundSurface[]" with empty brackets
-        if !before_tag.is_empty() {
+        // Extract feature_type from the current element's tag
+        let feature_type = if !before_tag.is_empty() {
             if !before_tag.contains('[') {
                 // No brackets at all - simple tag name
-                return (None, Some(before_tag.to_string()));
-            } else if before_tag.ends_with("[]") {
-                // Empty brackets - element has no gml:id attribute but brackets were added
-                let tag = before_tag.trim_end_matches("[]");
-                return (None, Some(tag.to_string()));
+                Some(before_tag.to_string())
+            } else {
+                // Has brackets - extract tag name before the bracket
+                before_tag.split('[').next().map(|tag| tag.to_string())
             }
-        }
+        } else {
+            None
+        };
 
-        (None, None)
+        (feature_id, feature_type)
     }
 
     /// Expect a geometric attribute of CityGML
@@ -1210,7 +1217,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         }
                     }
 
-                    if self.state.fp_buf.len() % 3 != 0 {
+                    if !self.state.fp_buf.len().is_multiple_of(3) {
                         return Err(ParseError::InvalidValue(
                             "Length of coordinate numbers must be multiple of 3".into(),
                         ));
@@ -1367,7 +1374,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         }
                     }
 
-                    if self.state.fp_buf.len() % 3 != 0 {
+                    if !self.state.fp_buf.len().is_multiple_of(3) {
                         return Err(ParseError::InvalidValue(
                             "Length of coordinate numbers must be multiple of 3".into(),
                         ));
@@ -1528,7 +1535,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         }
                     }
 
-                    if self.state.fp_buf.len() % 2 != 0 {
+                    if !self.state.fp_buf.len().is_multiple_of(2) {
                         return Err(ParseError::InvalidValue(
                             "Length of UV coordinates must be multiple of 2".into(),
                         ));
