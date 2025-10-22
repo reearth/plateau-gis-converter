@@ -462,7 +462,9 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
             Point => todo!(),      // FIXME
             MultiPoint => todo!(), // FIXME
             MultiCurve => self.parse_multi_curve_prop(geomref, lod, feature_id, feature_type)?, // FIXME
-            CompositeCurve => self.parse_composite_curve_prop(geomref, lod, feature_id, feature_type)?,
+            CompositeCurve => {
+                self.parse_composite_curve_prop(geomref, lod, feature_id, feature_type)?
+            }
         }
 
         self.state
