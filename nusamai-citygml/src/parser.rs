@@ -534,6 +534,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         feature_id: Option<String>,
         feature_type: Option<String>,
     ) -> Result<(), ParseError> {
+        // CompositeCurve has stricter semantics than MultiCurve:
+        // - Segments MUST be topologically connected (end-to-end)
+        // - Order matters (forms a continuous path)
+        // However, we reuse parse_multi_curve() because the XML structure is identical (both use <gml:curveMember>).
+        // If needed, topology validation should be handled separately. Here, we just parse the geometry for efficiency.
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
