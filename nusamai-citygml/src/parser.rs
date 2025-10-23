@@ -869,9 +869,19 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             line_end = Some(self.state.geometry_collector.multilinestring.len());
                             GeometryType::Curve
                         }
+                        (Bound(GML31_NS), b"CompositeCurve") => {
+                            self.parse_composite_curve_prop(
+                                geomrefs,
+                                lod,
+                                feature_id.clone(),
+                                feature_type.clone(),
+                            )?;
+                            line_end = Some(self.state.geometry_collector.multilinestring.len());
+                            GeometryType::Curve
+                        }
                         (Bound(GML31_NS), b"TriangulatedSurface") => unimplemented!(),
                         (Bound(GML31_NS), b"Tin") => unimplemented!(),
-                        (Bound(GML31_NS), b"Point" | b"CompositeCurve") => unimplemented!(), // FIXME:
+                        (Bound(GML31_NS), b"Point") => unimplemented!(), // FIXME:
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
                                 "Unexpected geometry elements <{}>",
