@@ -157,7 +157,7 @@ pub struct Square {
 
     #[citygml(path = b"uro:tranDataQualityAttribute/uro:TransportationDataQualityAttribute")]
     #[citygml(path = b"uro:tranDataQualityAttribute/uro:DataQualityAttribute")]
-    pub tran_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:tranDmAttribute")]
     pub tran_dm_attribute: Vec<uro::DmAttributeProperty>, // -> uro:DmAttribute

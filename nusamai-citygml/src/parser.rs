@@ -86,13 +86,15 @@ impl<'a> InternalState<'a> {
 pub struct ParseContext<'a> {
     source_uri: Url,
     code_resolver: &'a dyn CodeResolver,
+    lossless_mode: bool,
 }
 
 impl<'a> ParseContext<'a> {
-    pub fn new(source_uri: Url, code_resolver: &'a dyn CodeResolver) -> Self {
+    pub fn new(source_uri: Url, code_resolver: &'a dyn CodeResolver, lossless_mode: bool) -> Self {
         Self {
             source_uri,
             code_resolver,
+            lossless_mode,
         }
     }
 
@@ -103,6 +105,10 @@ impl<'a> ParseContext<'a> {
     pub fn code_resolver(&self) -> &dyn CodeResolver {
         self.code_resolver
     }
+
+    pub fn lossless_mode(&self) -> bool {
+        self.lossless_mode
+    }
 }
 
 impl Default for ParseContext<'_> {
@@ -110,6 +116,7 @@ impl Default for ParseContext<'_> {
         Self {
             source_uri: Url::parse("file:///").unwrap(),
             code_resolver: &codelist::NoopResolver {},
+            lossless_mode: false,
         }
     }
 }
@@ -126,7 +133,7 @@ impl<'a> CityGmlReader<'a> {
     pub fn start_root<'b: 'a, R: BufRead>(
         &'a mut self,
         reader: &'b mut quick_xml::NsReader<R>,
-    ) -> Result<SubTreeReader<R>, ParseError> {
+    ) -> Result<SubTreeReader<'a, 'a, R>, ParseError> {
         let config = reader.config_mut();
         config.trim_text(true);
         config.expand_empty_elements = true;
