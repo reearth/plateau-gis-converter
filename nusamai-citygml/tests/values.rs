@@ -119,18 +119,14 @@ fn parse_basic_types() {
             assert_eq!(root.int.unwrap(), -1234567);
             assert_eq!(root.uint.unwrap(), 1234567);
             assert!((root.float.unwrap() - 1234.567).abs() < 1e-15);
-            assert!(
-                (root
-                    .measure
-                    .as_ref()
-                    .unwrap()
-                    .value()
-                    .parse::<f64>()
-                    .unwrap()
-                    - 3.4)
-                    .abs()
-                    < 1e-15
-            );
+            let measure_value = root
+                .measure
+                .as_ref()
+                .unwrap()
+                .value()
+                .parse::<f64>()
+                .unwrap();
+            assert!((measure_value - 3.4).abs() < 1e-15);
             assert_eq!(root.string.as_ref().unwrap(), "hello");
             assert_eq!(
                 root.uri.as_ref().unwrap().value().to_string(),
