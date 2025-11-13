@@ -261,7 +261,7 @@ impl Measure {
     pub fn new(value: String, uom: Option<String>) -> Self {
         Self { value, uom }
     }
-    pub fn value(&self) ->  &str {
+    pub fn value(&self) -> &str {
         &self.value
     }
     pub fn uom(&self) -> Option<&str> {
@@ -282,10 +282,10 @@ impl CityGmlElement for Measure {
 
         let text = st.parse_text()?;
         // check if the value is a valid float, but store as string
-        if let Err(_) = text.parse::<f64>() {
+        if text.parse::<f64>().is_err() {
             return Err(ParseError::InvalidValue(format!(
                 "Expected a floating point number, got {text}"
-            )))
+            )));
         }
         self.value = text.to_string();
         Ok(())
