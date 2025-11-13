@@ -10,6 +10,8 @@ use crate::{
     schema, CityGmlAttribute, CityGmlElement, ParseContext,
 };
 
+// type aliases
+pub type Date = chrono::NaiveDate;
 pub type Length = Measure; // Length is almost same as Measure
 pub type GYear = String; // TODO?
 pub type GYearMonth = String; // TODO?
@@ -250,22 +252,17 @@ impl CityGmlElement for bool {
 
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Measure {
-    value: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    original_text: Option<String>,
+    value: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     uom: Option<String>,
 }
 
 impl Measure {
-    pub fn new(value: f64) -> Self {
-        Self { value, original_text: None, uom: None }
+    pub fn new(value: String, uom: Option<String>) -> Self {
+        Self { value, uom }
     }
-    pub fn value(&self) -> f64 {
-        self.value
-    }
-    pub fn original_text(&self) -> Option<&str> {
-        self.original_text.as_deref()
+    pub fn value(&self) ->  &str {
+        &self.value
     }
     pub fn uom(&self) -> Option<&str> {
         self.uom.as_deref()
@@ -275,8 +272,6 @@ impl Measure {
 impl CityGmlElement for Measure {
     #[inline(never)]
     fn parse<R: BufRead>(&mut self, st: &mut SubTreeReader<R>) -> Result<(), ParseError> {
-        let lossless_mode = st.context().lossless_mode();
-
         // Parse attributes to extract 'uom' if present
         st.parse_attributes(|k, v, _| {
             if k == b"@uom" {
@@ -286,18 +281,14 @@ impl CityGmlElement for Measure {
         })?;
 
         let text = st.parse_text()?;
-        match text.parse() {
-            Ok(v) => {
-                self.value = v;
-                if lossless_mode {
-                    self.original_text = Some(text.to_string());
-                }
-                Ok(())
-            }
-            Err(_) => Err(ParseError::InvalidValue(format!(
+        // check if the value is a valid float, but store as string
+        if let Err(_) = text.parse::<f64>() {
+            return Err(ParseError::InvalidValue(format!(
                 "Expected a floating point number, got {text}"
-            ))),
+            )))
         }
+        self.value = text.to_string();
+        Ok(())
     }
 
     #[inline(never)]
@@ -310,68 +301,23 @@ impl CityGmlElement for Measure {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Date {
-    date: NaiveDate,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    original_text: Option<String>,
-}
-
-impl std::fmt::Display for Date {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(original) = &self.original_text {
-            return write!(f, "{}", original);
-        }
-        write!(f, "{}", self.date)
-    }
-}
-
-impl Default for Date {
-    fn default() -> Self {
-        Self {
-            date: NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(),
-            original_text: None,
-        }
-    }
-}
-
-impl Date {
-    pub fn new(date: NaiveDate) -> Self {
-        Self { date, original_text: None }
-    }
-    pub fn date(&self) -> NaiveDate {
-        self.date
-    }
-    pub fn original_text(&self) -> Option<&str> {
-        self.original_text.as_deref()
-    }
-}
-
 impl CityGmlElement for Date {
     #[inline(never)]
     fn parse<R: BufRead>(&mut self, st: &mut SubTreeReader<R>) -> Result<(), ParseError> {
-        let lossless_mode = st.context().lossless_mode();
         let text = st.parse_text()?;
-
-        match NaiveDate::parse_from_str(&text, "%Y-%m-%d").or_else(|_| NaiveDate::parse_from_str(&text, "%Y%m%d")) {
+        match Date::parse_from_str(text, "%Y-%m-%d") {
             Ok(v) => {
-                self.date = v;
-                if lossless_mode {
-                    self.original_text = Some(text.to_string());
-                }
+                *self = v;
                 Ok(())
             }
             Err(_) => Err(ParseError::InvalidValue(format!(
-                "Expected a date in the format YYYY-MM-DD or YYYYMMDD, got {text}"
+                "Expected a date in the format YYYY-MM-DD, got {text}"
             ))),
         }
     }
 
     #[inline(never)]
     fn into_object(self) -> Option<Value> {
-        if let Some(text) = self.original_text {
-            return Some(Value::String(text));
-        }
         Some(Value::Date(self))
     }
 
