@@ -1163,8 +1163,6 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
     }
 
     fn parse_patches(&mut self) -> Result<Vec<LocalId>, ParseError> {
-        let result = Vec::new();
-
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
@@ -1188,7 +1186,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 Ok(Event::End(end)) => {
                     let (nsres, localname) = self.reader.resolve_element(end.name());
                     if nsres == Bound(GML31_NS) && localname.as_ref() == b"patches" {
-                        return Ok(result);
+                        return Ok(Vec::new());
                     }
                 }
                 Ok(Event::Text(_)) => {
