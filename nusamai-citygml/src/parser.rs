@@ -865,12 +865,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             GeometryType::Curve
                         }
                         (Bound(GML31_NS), b"MultiCurve") => {
-                            self.parse_multi_curve_prop(
-                                geomrefs,
-                                lod,
-                                feature_id.clone(),
-                                feature_type.clone(),
-                            )?;
+                            // MultiCurve start tag already consumed, parse contents directly
+                            self.parse_multi_curve()?;
                             line_end = Some(self.state.geometry_collector.multilinestring.len());
                             GeometryType::Curve
                         }
