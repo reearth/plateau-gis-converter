@@ -1,6 +1,9 @@
-use nusamai_citygml::{citygml_data, citygml_feature, citygml_property, CityGmlElement, Code, GYearMonth, Length};
+use nusamai_citygml::{
+    citygml_data, citygml_feature, citygml_property, CityGmlElement, Code, GYearMonth, Length,
+};
 
 #[citygml_property(name = "uro:DmAttributeProperty")]
+#[allow(clippy::large_enum_variant)]
 pub enum DmAttributeProperty {
     #[citygml(path = b"uro:DmAnnotation")]
     DmAnnotation(DmAnnotation),

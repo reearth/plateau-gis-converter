@@ -151,7 +151,8 @@ impl FlattenTreeTransform {
                     if let Some(parent) = parent {
                         match parent {
                             Parent::Feature { id, typename } => {
-                                new_obj.attributes
+                                new_obj
+                                    .attributes
                                     .insert("parentId".to_string(), Value::String(id.to_string()));
                                 new_obj.attributes.insert(
                                     "parentType".to_string(),
@@ -165,7 +166,8 @@ impl FlattenTreeTransform {
                                 );
                             }
                             Parent::Object { id, typename } => {
-                                new_obj.attributes
+                                new_obj
+                                    .attributes
                                     .insert("parentId".to_string(), Value::String(id.to_string()));
                                 new_obj.attributes.insert(
                                     "parentType".to_string(),
