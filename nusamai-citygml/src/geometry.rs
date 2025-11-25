@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use flatgeom::{MultiLineString, MultiPoint, MultiPolygon};
 use nusamai_projection::crs::*;
 
@@ -49,7 +51,7 @@ pub enum GmlGeometryType {
 
 impl GmlGeometryType {
     /// Parse from a string slice (XML element local name)
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn maybe_from_str(s: &str) -> Option<Self> {
         match s {
             "Solid" => Some(Self::Solid),
             "MultiSurface" => Some(Self::MultiSurface),
@@ -71,9 +73,9 @@ impl GmlGeometryType {
     }
 }
 
-impl ToString for GmlGeometryType {
-    fn to_string(&self) -> String {
-        match self {
+impl Display for GmlGeometryType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
             Self::Solid => "Solid",
             Self::MultiSurface => "MultiSurface",
             Self::CompositeSurface => "CompositeSurface",
@@ -89,8 +91,8 @@ impl ToString for GmlGeometryType {
             Self::MultiPoint => "MultiPoint",
             Self::Geometry => "Geometry",
             Self::MultiGeometry => "MultiGeometry",
-        }
-        .to_string()
+        };
+        write!(f, "{s}")
     }
 }
 
@@ -135,7 +137,7 @@ pub enum PropertyType {
 
 impl PropertyType {
     /// Parse from a string slice (property name without namespace)
-    pub fn try_from_str(s: &str) -> Option<Self> {
+    pub fn maybe_from_str(s: &str) -> Option<Self> {
         let out = match s {
             "lod0Point" => Self::Lod0Point,
             "lod0MultiCurve" => Self::Lod0MultiCurve,
@@ -169,15 +171,15 @@ impl PropertyType {
             "lod3Surface" => Self::Lod3Surface,
             "tin" => Self::Tin,
 
-            &_ => return None
+            &_ => return None,
         };
         Some(out)
     }
 }
 
-impl ToString for PropertyType {
-    fn to_string(&self) -> String {
-        match self {
+impl Display for PropertyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
             Self::Lod0Point => "lod0Point",
             Self::Lod0MultiCurve => "lod0MultiCurve",
             Self::Lod2MultiCurve => "lod2MultiCurve",
@@ -209,8 +211,8 @@ impl ToString for PropertyType {
             Self::Lod2Surface => "lod2Surface",
             Self::Lod3Surface => "lod3Surface",
             Self::Tin => "tin",
-        }
-        .to_string()
+        };
+        write!(f, "{s}")
     }
 }
 
