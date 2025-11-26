@@ -453,6 +453,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
 
         // Extract just the local name without namespace prefix
         // e.g., "bldg:lod2MultiSurface" -> "lod2MultiSurface"
+        // Using maybe_from_str as not all gml objects have geometric properties
         path_segment
             .split('/')
             .next()
