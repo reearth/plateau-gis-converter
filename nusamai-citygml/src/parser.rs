@@ -1089,12 +1089,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"LineString") => {
                             self.parse_linestring()?;
-                        },
+                        }
                         _ => {
-                            return Err(ParseError::SchemaViolation(
-                                format!("Expected <LineString>, but found {}", 
-                                String::from_utf8_lossy(localname.as_ref()))
-                            ))
+                            return Err(ParseError::SchemaViolation(format!(
+                                "Expected <LineString>, but found {}",
+                                String::from_utf8_lossy(localname.as_ref())
+                            )))
                         }
                     };
                 }
