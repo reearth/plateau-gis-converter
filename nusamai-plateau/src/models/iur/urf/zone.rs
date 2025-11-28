@@ -1729,7 +1729,7 @@ pub struct District {
     pub building_design_restriction: Option<String>,
 
     #[citygml(path = b"urf:minimumGreeningRate")]
-    pub minimum_greening_rate: Option<f64>,
+    pub minimum_greening_rate: Option<u64>,
 
     #[citygml(path = b"urf:fenceGuideline")]
     pub fence_guideline: Option<String>,
@@ -1741,7 +1741,7 @@ pub struct District {
     pub restrictions_for_noise_protection: Option<String>,
 
     #[citygml(path = b"urf:minimumFrontageRate")]
-    pub minimum_frontage_rate: Option<f64>,
+    pub minimum_frontage_rate: Option<u64>,
 }
 
 #[citygml_feature(name = "urf:DistrictDevelopmentPlan")]
@@ -8219,7 +8219,7 @@ pub struct SpecifiedDisasterPreventionBlockImprovementZone {
     pub setback_size: Option<String>,
 
     #[citygml(path = b"urf:minimumFrontageRate")]
-    pub minimum_frontage_rate: Option<f64>,
+    pub minimum_frontage_rate: Option<u64>,
 
     #[citygml(path = b"urf:minimumBuildingHeight")]
     pub minimum_building_height: Option<Length>,
@@ -8929,7 +8929,7 @@ pub struct TreePlantingDistrict {
     pub area_in_total: Option<Measure>,
 
     #[citygml(path = b"urf:minimumGreeningRate", required)]
-    pub minimum_greening_rate: Option<f64>,
+    pub minimum_greening_rate: Option<u64>,
 }
 
 #[citygml_feature(name = "urf:UnclassifiedBlankArea")]
