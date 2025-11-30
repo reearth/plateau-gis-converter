@@ -1,5 +1,6 @@
 use nusamai_citygml::{
-    citygml_data, citygml_property, CityGmlElement, Code, Date, DoubleList, GYear, Measure, Point, Uri,
+    citygml_data, citygml_property, CityGmlElement, Code, Date, DoubleList, GYear, Measure, Point,
+    Uri,
 };
 
 use crate::models::core::Address;
