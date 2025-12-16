@@ -1186,8 +1186,16 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
                             let (surface_member_id, _) = self.parse_surface()?;
-                            if surface_id.is_none() {
-                                surface_id = surface_member_id;
+                            // record each surface member's ID
+                            if let Some(id) = surface_member_id {
+                                if surface_id.is_none() {
+                                    surface_id = Some(id.clone());
+                                }
+                                result.push(id.clone());
+                                self.state
+                                    .geometry_collector
+                                    .multi_surfaces
+                                    .push(id);
                             }
                         }
                         _ => {
@@ -1196,14 +1204,6 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             ))
                         }
                     };
-                    // record a partial surface span
-                    if let Some(ref id) = surface_id {
-                        result.push(id.clone());
-                        self.state
-                            .geometry_collector
-                            .multi_surfaces
-                            .push(id.clone());
-                    }
                 }
                 Ok(Event::End(end)) => {
                     let (nsres, localname) = self.reader.resolve_element(end.name());
