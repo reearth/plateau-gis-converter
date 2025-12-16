@@ -150,8 +150,8 @@ fn load_cityfurniture_example() {
 }
 
 #[test]
-fn load_cityfurniture_54400098() {
-    // Test with the large file that triggers the path mismatch bug
+fn load_cityfurniture_multi_surface() {
+    // Test multi surface parsing
     let cityobjs = load_cityobjs("../nusamai-citygml/src/test_bug_54400098_frn.gml");
     assert_eq!(cityobjs.len(), 2);
 }
