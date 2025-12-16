@@ -2013,7 +2013,8 @@ mod tests {
             </gml:LineString>
         "#,
             |sr| {
-                sr.parse_linestring().expect("Should parse valid linestring");
+                sr.parse_linestring()
+                    .expect("Should parse valid linestring");
             },
         );
     }
