@@ -149,6 +149,13 @@ fn load_cityfurniture_example() {
     );
 }
 
+#[test]
+fn load_cityfurniture_54400098() {
+    // Test with the large file that triggers the path mismatch bug
+    let cityobjs = load_cityobjs("../nusamai-citygml/src/test_bug_54400098_frn.gml");
+    assert_eq!(cityobjs.len(), 2);
+}
+
 // #[test]
 // fn load_generics_example() {
 //     let cityobjs = load_cityobjs("./tests/data/plateau-3_0/udx/gen/53392565_gen_6697.gml");

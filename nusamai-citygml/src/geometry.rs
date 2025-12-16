@@ -322,6 +322,9 @@ pub(crate) struct GeometryCollector {
     /// Lists of surface for composite surface
     pub composite_surfaces: Vec<LocalId>,
 
+    /// Lists of surface for multi surface
+    pub multi_surfaces: Vec<LocalId>,
+
     /// Orientable surfaces for each surface
     pub orientable_surfaces: Vec<OrientableSurface>,
 }
@@ -360,6 +363,12 @@ impl GeometryCollector {
                 let (index, _) = self.vertices.insert_full(vbits);
                 index as u32
             }));
+    }
+
+    pub fn add_point(&mut self, point: [f64; 3]) {
+        let vbits = [point[0].to_bits(), point[1].to_bits(), point[2].to_bits()];
+        let (index, _) = self.vertices.insert_full(vbits);
+        self.multipoint.push(index as u32);
     }
 
     pub fn into_geometries(self, envelope_crs_uri: Option<String>) -> GeometryStore {
