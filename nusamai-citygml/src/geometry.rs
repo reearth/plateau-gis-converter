@@ -322,9 +322,6 @@ pub(crate) struct GeometryCollector {
     /// Lists of surface for composite surface
     pub composite_surfaces: Vec<LocalId>,
 
-    /// Lists of surface for multi surface
-    pub multi_surfaces: Vec<LocalId>,
-
     /// Orientable surfaces for each surface
     pub orientable_surfaces: Vec<OrientableSurface>,
 }

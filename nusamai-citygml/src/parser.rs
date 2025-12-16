@@ -1191,11 +1191,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 if surface_id.is_none() {
                                     surface_id = Some(id.clone());
                                 }
-                                result.push(id.clone());
-                                self.state
-                                    .geometry_collector
-                                    .multi_surfaces
-                                    .push(id);
+                                result.push(id);
                             }
                         }
                         _ => {
