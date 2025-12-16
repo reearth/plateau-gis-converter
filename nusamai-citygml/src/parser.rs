@@ -1407,7 +1407,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
     fn parse_pos_list(text: &str, fp_buf: &mut Vec<f64>) -> Result<(), ParseError> {
         for s in text.split_ascii_whitespace() {
             match s.parse::<f64>() {
-                Ok(v) if v.is_finite() => {
+                Ok(v) if !v.is_nan() => {
                     fp_buf.push(v);
                 }
                 Ok(v) => {
