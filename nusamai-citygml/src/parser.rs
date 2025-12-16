@@ -1398,8 +1398,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    /// Parse and validate floating point coordinates from text
-    /// Rejects NaN and infinity values
+    /// Parse and validate floating point coordinates from text, reject NaN
     fn parse_pos_list(text: &str, fp_buf: &mut Vec<f64>) -> Result<(), ParseError> {
         for s in text.split_ascii_whitespace() {
             match s.parse::<f64>() {
@@ -1407,7 +1406,6 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     fp_buf.push(v);
                 }
                 Ok(v) => {
-                    // NaN or infinity detected - reject
                     return Err(ParseError::InvalidValue(format!(
                         "Non-finite coordinate value: '{}' (parsed as {}). Expected finite floating point number.",
                         s, v
