@@ -152,8 +152,8 @@ fn load_cityfurniture_example() {
 #[test]
 fn load_cityfurniture_multi_surface() {
     // Test multi surface parsing
-    let cityobjs = load_cityobjs("../nusamai-citygml/src/test_bug_54400098_frn.gml");
-    assert_eq!(cityobjs.len(), 2);
+    let cityobjs = load_cityobjs("./tests/data/tsukuba-shi/udx/frn/54400098_frn_6697_op.gml");
+    assert_eq!(cityobjs.len(), 153);
 }
 
 // #[test]
