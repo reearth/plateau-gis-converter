@@ -1176,35 +1176,27 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_multi_surface(&mut self) -> Result<Vec<LocalId>, ParseError> {
-        let mut surface_id = None;
-        let mut result = Vec::new();
+    fn parse_multi_surface(&mut self) -> Result<(), ParseError> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            let (surface_member_id, _) = self.parse_surface()?;
-                            // record each surface member's ID
-                            if let Some(id) = surface_member_id {
-                                if surface_id.is_none() {
-                                    surface_id = Some(id.clone());
-                                }
-                                result.push(id);
-                            }
+                            self.parse_surface()?;
                         }
-                        _ => {
-                            return Err(ParseError::SchemaViolation(
-                                "Unexpected element. Because only surface member".into(),
-                            ))
+                        (_, localname) => {
+                            return Err(ParseError::SchemaViolation(format!(
+                                "Unexpected element <{}> by parsing multi surface",
+                                String::from_utf8_lossy(localname.as_ref())
+                            )))
                         }
                     };
                 }
                 Ok(Event::End(end)) => {
                     let (nsres, localname) = self.reader.resolve_element(end.name());
                     if nsres == Bound(GML31_NS) && localname.as_ref() == b"MultiSurface" {
-                        return Ok(result);
+                        return Ok(());
                     }
                 }
                 Ok(Event::Text(_)) => {
