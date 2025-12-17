@@ -1188,7 +1188,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         (_, localname) => {
                             return Err(ParseError::SchemaViolation(format!(
                                 "Unexpected element <{}> by parsing multi surface",
-                                String::from_utf8_lossy(localname.as_ref())
+                                String::from_utf8_lossy(localname)
                             )))
                         }
                     };
