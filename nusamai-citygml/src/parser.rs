@@ -195,20 +195,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
 
                     // Check if this element has gml:id and push to feature stack
                     let current_depth = self.state.path_stack_indices.len();
-                    let mut feature_id: Option<String> = None;
-                    for attr in start.attributes().flatten() {
-                        let (attr_nsres, attr_localname) = self.reader.resolve_attribute(attr.key);
-                        if attr_nsres
-                            == quick_xml::name::ResolveResult::Bound(quick_xml::name::Namespace(
-                                b"http://www.opengis.net/gml",
-                            ))
-                            && attr_localname.as_ref() == b"id"
-                        {
-                            feature_id =
-                                Some(String::from_utf8_lossy(attr.value.as_ref()).to_string());
-                            break;
-                        }
-                    }
+                    let feature_id: Option<LocalId> = extract_gmlid(&start, self.reader);
 
                     if let Some(fid) = feature_id {
                         // This element has gml:id - save it as a feature
@@ -220,7 +207,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         );
                         self.state
                             .feature_stack
-                            .push((fid, feature_type, current_depth));
+                            .push((fid.0, feature_type, current_depth));
                     }
 
                     // save start tag
@@ -646,20 +633,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         feature_type: Option<String>,
         property_name: Option<PropertyType>,
     ) -> Result<(), ParseError> {
-        let mut surface_id = None;
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
-                    // surface id
-                    for attr in start.attributes().flatten() {
-                        let (nsres, localname) = self.reader.resolve_attribute(attr.key);
-                        if nsres == Bound(GML31_NS) && localname.as_ref() == b"id" {
-                            let id = String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                            surface_id = Some(LocalId::from(id));
-                            break;
-                        }
-                    }
-
+                    let surface_id = extract_gmlid(&start, self.reader);
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     let poly_begin = self.state.geometry_collector.multipolygon.len();
 
@@ -694,7 +671,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         });
 
                         // record a partial surface span
-                        if let Some(id) = surface_id.clone() {
+                        if let Some(id) = surface_id {
                             self.state
                                 .geometry_collector
                                 .surface_spans
@@ -755,9 +732,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         property_name: Option<PropertyType>,
     ) -> Result<(), ParseError> {
         let poly_begin = self.state.geometry_collector.multipolygon.len();
+        let mut solid_id = None;
 
         if expect_start(self.reader, &mut self.state.buf1, GML31_NS, b"Solid")? {
-            self.parse_solid()?;
+            solid_id = self.parse_solid()?;
             expect_end(self.reader, &mut self.state.buf1)?;
         }
 
@@ -770,7 +748,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 lod,
                 pos: poly_begin as u32,
                 len: (poly_end - poly_begin) as u32,
-                id: None,
+                id: solid_id,
                 feature_id,
                 feature_type,
             });
@@ -786,20 +764,9 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         feature_type: Option<String>,
         property_name: Option<PropertyType>,
     ) -> Result<(), ParseError> {
-        let mut surface_id = None;
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
-                    // Get surface id from gml:id attribute if present
-                    for attr in start.attributes().flatten() {
-                        let (nsres, localname) = self.reader.resolve_attribute(attr.key);
-                        if nsres == Bound(GML31_NS) && localname.as_ref() == b"id" {
-                            let id = String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                            surface_id = Some(LocalId::from(id));
-                            break;
-                        }
-                    }
-
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     let poly_begin = self.state.geometry_collector.multipolygon.len();
 
@@ -828,7 +795,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             lod,
                             pos: poly_begin as u32,
                             len: (poly_end - poly_begin) as u32,
-                            id: surface_id.clone(),
+                            id: None,
                             feature_id: feature_id.clone(),
                             feature_type: feature_type.clone(),
                         });
@@ -1188,10 +1155,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_solid(&mut self) -> Result<(), ParseError> {
+    fn parse_solid(&mut self) -> Result<Option<LocalId>, ParseError> {
+        let mut solid_id = None;
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
+                    solid_id = extract_gmlid(&start, self.reader);
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"exterior") => {
@@ -1216,7 +1185,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 Ok(Event::End(end)) => {
                     let (nsres, localname) = self.reader.resolve_element(end.name());
                     if nsres == Bound(GML31_NS) && localname.as_ref() == b"Solid" {
-                        return Ok(());
+                        return Ok(solid_id);
                     }
                 }
                 Ok(_) => (),
@@ -1427,16 +1396,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
-                    // surface id
-                    for attr in start.attributes().flatten() {
-                        let (nsres, localname) = self.reader.resolve_attribute(attr.key);
-                        if nsres == Bound(GML31_NS) && localname.as_ref() == b"id" {
-                            let id = String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                            surface_id = Some(LocalId::from(id));
-                            break;
-                        }
-                    }
-
+                    surface_id = extract_gmlid(&start, self.reader);
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"Polygon") => self.parse_polygon()?,
@@ -1694,16 +1654,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             )));
                         }
                         (3, b"LinearRing") => {
-                            ring_id = None;
-                            for attr in start.attributes().flatten() {
-                                let (nsres, localname) = self.reader.resolve_attribute(attr.key);
-                                if nsres == Bound(GML31_NS) && localname.as_ref() == b"id" {
-                                    let id =
-                                        String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                                    ring_id = Some(LocalId::from(id));
-                                    break;
-                                }
-                            }
+                            ring_id = extract_gmlid(&start, self.reader);
                         }
                         (3, _) => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1945,6 +1896,17 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
 
         Ok(())
     }
+}
+
+fn extract_gmlid(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Option<LocalId> {
+    for attr in start.attributes().flatten() {
+        let (nsres, localname) = reader.resolve_attribute(attr.key);
+        if nsres == Bound(GML31_NS) && localname.as_ref() == b"id" {
+            let id = String::from_utf8_lossy(attr.value.as_ref()).to_string();
+            return Some(LocalId::from(id));
+        }
+    }
+    return None
 }
 
 fn expect_start<R: BufRead>(
