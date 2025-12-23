@@ -728,7 +728,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         property_name: Option<PropertyType>,
     ) -> Result<(), ParseError> {
         let poly_begin = self.state.geometry_collector.multipolygon.len();
-        self.parse_surface_member()?;
+        let surface_id = self.parse_surface_member()?;
         let poly_end = self.state.geometry_collector.multipolygon.len();
         if poly_end - poly_begin > 0 {
             geomrefs.push(GeometryRef {
@@ -738,7 +738,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 lod,
                 pos: poly_begin as u32,
                 len: (poly_end - poly_begin) as u32,
-                id: None,
+                id: surface_id,
                 feature_id,
                 feature_type,
             });
@@ -1422,10 +1422,21 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_surface_member(&mut self) -> Result<(), ParseError> {
+    fn parse_surface_member(&mut self) -> Result<Option<LocalId>, ParseError> {
+        let mut surface_id = None;
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
+                    // surface id
+                    for attr in start.attributes().flatten() {
+                        let (nsres, localname) = self.reader.resolve_attribute(attr.key);
+                        if nsres == Bound(GML31_NS) && localname.as_ref() == b"id" {
+                            let id = String::from_utf8_lossy(attr.value.as_ref()).to_string();
+                            surface_id = Some(LocalId::from(id));
+                            break;
+                        }
+                    }
+
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"Polygon") => self.parse_polygon()?,
@@ -1469,7 +1480,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 Ok(Event::End(end)) => {
                     let (nsres, localname) = self.reader.resolve_element(end.name());
                     if nsres == Bound(GML31_NS) && localname.as_ref() == b"surfaceMember" {
-                        return Ok(());
+                        return Ok(surface_id);
                     }
                 }
                 Ok(Event::Text(_)) => {
