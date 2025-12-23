@@ -1395,6 +1395,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
                     surface_id = extract_gmlid(&start, self.reader);
+                    let poly_begin = self.state.geometry_collector.multipolygon.len();
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"Polygon") => self.parse_polygon()?,
@@ -1432,6 +1433,21 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 "Unexpected element <{}> by parsing surface member",
                                 String::from_utf8_lossy(localname.as_ref())
                             )))
+                        }
+                    }
+
+                    // record a partial surface span
+                    if let Some(id) = surface_id.clone() {
+                        let poly_end = self.state.geometry_collector.multipolygon.len() as u32;
+                        if poly_end > poly_begin as u32 {
+                            self.state
+                                .geometry_collector
+                                .surface_spans
+                                .push(SurfaceSpan {
+                                    id,
+                                    start: poly_begin as u32,
+                                    end: poly_end,
+                                });
                         }
                     }
                 }
