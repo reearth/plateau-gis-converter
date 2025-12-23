@@ -476,13 +476,9 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
             Solid => {
                 self.parse_solid_prop(geomref, lod, feature_id, feature_type, property_name)?
             }
-            MultiSolid => self.parse_multi_solid_prop(
-                geomref,
-                lod,
-                feature_id,
-                feature_type,
-                property_name,
-            )?,
+            MultiSolid => {
+                self.parse_multi_solid_prop(geomref, lod, feature_id, feature_type, property_name)?
+            }
             MultiSurface => self.parse_multi_surface_prop(
                 geomref,
                 lod,
