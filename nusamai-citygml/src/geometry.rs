@@ -26,11 +26,9 @@ pub enum GeometryParseType {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum GmlGeometryType {
-    // Solid types
-    Solid,
+    // polygonal types
     MultiSolid,
-
-    // Surface types
+    Solid,
     MultiSurface,
     CompositeSurface,
     OrientableSurface,
