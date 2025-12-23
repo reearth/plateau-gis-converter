@@ -732,10 +732,9 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         property_name: Option<PropertyType>,
     ) -> Result<(), ParseError> {
         let poly_begin = self.state.geometry_collector.multipolygon.len();
-        let mut solid_id = None;
 
         if expect_start(self.reader, &mut self.state.buf1, GML31_NS, b"Solid")? {
-            solid_id = self.parse_solid()?;
+            self.parse_solid()?;
             expect_end(self.reader, &mut self.state.buf1)?;
         }
 
@@ -748,7 +747,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 lod,
                 pos: poly_begin as u32,
                 len: (poly_end - poly_begin) as u32,
-                id: solid_id,
+                id: None,
                 feature_id,
                 feature_type,
             });
@@ -1155,12 +1154,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_solid(&mut self) -> Result<Option<LocalId>, ParseError> {
-        let mut solid_id = None;
+    fn parse_solid(&mut self) -> Result<(), ParseError> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
-                    solid_id = extract_gmlid(&start, self.reader);
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"exterior") => {
@@ -1185,7 +1182,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 Ok(Event::End(end)) => {
                     let (nsres, localname) = self.reader.resolve_element(end.name());
                     if nsres == Bound(GML31_NS) && localname.as_ref() == b"Solid" {
-                        return Ok(solid_id);
+                        return Ok(());
                     }
                 }
                 Ok(_) => (),
@@ -1275,7 +1272,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"solidMember") => {
-                            // Continue reading - solidMember is just a property wrapper
+                            // To handle solid IDs, implement a parse_solid_member() and call extract_gmlid() there.
+                            // Currently we just handle solid member parsing here.
                         }
                         (Bound(GML31_NS), b"Solid") => {
                             self.parse_solid()?;
@@ -1906,7 +1904,7 @@ fn extract_gmlid(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Option<
             return Some(LocalId::from(id));
         }
     }
-    return None
+    None
 }
 
 fn expect_start<R: BufRead>(
