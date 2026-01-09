@@ -525,9 +525,13 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             self.parse_curve_member()?;
                             GeometryType::Curve
                         }
+                        (Bound(GML31_NS), b"curveMembers") => {
+                            self.parse_curve_members()?;
+                            GeometryType::Curve
+                        }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Expected curveMember but found <{}>",
+                                "Expected curveMember or curveMembers but found <{}>",
                                 String::from_utf8_lossy(start.name().as_ref())
                             )))
                         }
@@ -589,9 +593,14 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             self.parse_curve_member()?;
                             GeometryType::Curve
                         }
+                        (Bound(GML31_NS), b"curveMembers") => {
+                            // CompositeCurve can also use curveMembers array property
+                            self.parse_curve_members()?;
+                            GeometryType::Curve
+                        }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Expected curveMember but found <{}>",
+                                "Expected curveMember or curveMembers but found <{}>",
                                 String::from_utf8_lossy(start.name().as_ref())
                             )))
                         }
@@ -1134,9 +1143,45 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         (Bound(GML31_NS), b"LineString") => {
                             self.parse_linestring()?;
                         }
+                        (Bound(GML31_NS), b"Curve") => {
+                            self.parse_curve()?;
+                        }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Expected <LineString>, but found {}",
+                                "Expected <LineString> or <Curve>, but found {}",
+                                String::from_utf8_lossy(localname.as_ref())
+                            )))
+                        }
+                    };
+                }
+                Ok(Event::End(_)) => return Ok(()),
+                Ok(Event::Text(text)) => {
+                    return Err(ParseError::SchemaViolation(
+                        format!("Unexpected text content: {:?}", text)
+                    ))
+                }
+                Ok(_) => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+
+    fn parse_curve_members(&mut self) -> Result<(), ParseError> {
+        // curveMembers is an array property that contains multiple curve elements directly
+        loop {
+            match self.reader.read_event_into(&mut self.state.buf1) {
+                Ok(Event::Start(start)) => {
+                    let (nsres, localname) = self.reader.resolve_element(start.name());
+                    match (nsres, localname.as_ref()) {
+                        (Bound(GML31_NS), b"LineString") => {
+                            self.parse_linestring()?;
+                        }
+                        (Bound(GML31_NS), b"Curve") => {
+                            self.parse_curve()?;
+                        }
+                        _ => {
+                            return Err(ParseError::SchemaViolation(format!(
+                                "Expected <LineString> or <Curve> in curveMembers, but found {}",
                                 String::from_utf8_lossy(localname.as_ref())
                             )))
                         }
@@ -1146,6 +1191,67 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 Ok(Event::Text(_)) => {
                     return Err(ParseError::SchemaViolation(
                         "Unexpected text content".into(),
+                    ))
+                }
+                Ok(_) => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+
+    fn parse_curve(&mut self) -> Result<(), ParseError> {
+        // Curve contains segments element with LineStringSegment or other curve segments
+        loop {
+            match self.reader.read_event_into(&mut self.state.buf1) {
+                Ok(Event::Start(start)) => {
+                    let (nsres, localname) = self.reader.resolve_element(start.name());
+                    match (nsres, localname.as_ref()) {
+                        (Bound(GML31_NS), b"segments") => {
+                            self.parse_curve_segments()?;
+                        }
+                        _ => {
+                            return Err(ParseError::SchemaViolation(format!(
+                                "Expected <segments> in Curve, but found {}",
+                                String::from_utf8_lossy(localname.as_ref())
+                            )))
+                        }
+                    };
+                }
+                Ok(Event::End(_)) => return Ok(()),
+                Ok(Event::Text(_)) => {
+                    return Err(ParseError::SchemaViolation(
+                        "Unexpected text content in Curve".into(),
+                    ))
+                }
+                Ok(_) => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+
+    fn parse_curve_segments(&mut self) -> Result<(), ParseError> {
+        // segments contains LineStringSegment or other curve segment types
+        loop {
+            match self.reader.read_event_into(&mut self.state.buf1) {
+                Ok(Event::Start(start)) => {
+                    let (nsres, localname) = self.reader.resolve_element(start.name());
+                    match (nsres, localname.as_ref()) {
+                        (Bound(GML31_NS), b"LineStringSegment") => {
+                            // LineStringSegment has same structure as LineString (posList)
+                            self.parse_linestring()?;
+                        }
+                        _ => {
+                            return Err(ParseError::SchemaViolation(format!(
+                                "Expected <LineStringSegment> in segments, but found {}",
+                                String::from_utf8_lossy(localname.as_ref())
+                            )))
+                        }
+                    };
+                }
+                Ok(Event::End(_)) => return Ok(()),
+                Ok(Event::Text(_)) => {
+                    return Err(ParseError::SchemaViolation(
+                        "Unexpected text content in segments".into(),
                     ))
                 }
                 Ok(_) => (),
@@ -1567,7 +1673,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     // check poslist
                     if depth != 2 {
                         return Err(ParseError::SchemaViolation(
-                            "Unexpected text content".into(),
+                            format!("Unexpected text content: {:?}", text)
                         ));
                     }
                     // parse coordinate sequence
