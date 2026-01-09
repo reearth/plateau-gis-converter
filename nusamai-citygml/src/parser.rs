@@ -1156,9 +1156,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 }
                 Ok(Event::End(_)) => return Ok(()),
                 Ok(Event::Text(text)) => {
-                    return Err(ParseError::SchemaViolation(
-                        format!("Unexpected text content: {:?}", text)
-                    ))
+                    return Err(ParseError::SchemaViolation(format!(
+                        "Unexpected text content: {:?}",
+                        text
+                    )))
                 }
                 Ok(_) => (),
                 Err(e) => return Err(e.into()),
@@ -1672,9 +1673,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 Ok((_, Event::Text(text))) => {
                     // check poslist
                     if depth != 2 {
-                        return Err(ParseError::SchemaViolation(
-                            format!("Unexpected text content: {:?}", text)
-                        ));
+                        return Err(ParseError::SchemaViolation(format!(
+                            "Unexpected text content: {:?}",
+                            text
+                        )));
                     }
                     // parse coordinate sequence
                     self.state.fp_buf.clear();
