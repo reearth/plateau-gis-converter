@@ -1201,7 +1201,6 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
     }
 
     fn parse_curve(&mut self) -> Result<(), ParseError> {
-        // Curve contains segments element with LineStringSegment or other curve segments
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
@@ -1231,7 +1230,6 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
     }
 
     fn parse_curve_segments(&mut self) -> Result<(), ParseError> {
-        // segments contains LineStringSegment or other curve segment types
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
@@ -2239,6 +2237,58 @@ mod tests {
         "#,
             |sr| {
                 sr.parse_polygon().expect_err("Should fail with NaN");
+            },
+        );
+    }
+
+    #[test]
+    fn parse_curve_members_with_linestrings() {
+        parse(
+            r#"
+            <gml:curveMembers xmlns:gml="http://www.opengis.net/gml">
+                <gml:LineString>
+                    <gml:posList>1.0 2.0 3.0 4.0 5.0 6.0</gml:posList>
+                </gml:LineString>
+                <gml:LineString>
+                    <gml:posList>7.0 8.0 9.0 10.0 11.0 12.0</gml:posList>
+                </gml:LineString>
+            </gml:curveMembers>
+        "#,
+            |sr| {
+                sr.parse_curve_members()
+                    .expect("Should parse curveMembers with LineStrings");
+                let geometries = sr.collect_geometries(None);
+                assert_eq!(geometries.multilinestring.len(), 2);
+            },
+        );
+    }
+
+    #[test]
+    fn parse_curve_members_with_curves() {
+        parse(
+            r#"
+            <gml:curveMembers xmlns:gml="http://www.opengis.net/gml">
+                <gml:Curve>
+                    <gml:segments>
+                        <gml:LineStringSegment>
+                            <gml:posList>1.0 2.0 3.0 4.0 5.0 6.0</gml:posList>
+                        </gml:LineStringSegment>
+                    </gml:segments>
+                </gml:Curve>
+                <gml:Curve>
+                    <gml:segments>
+                        <gml:LineStringSegment>
+                            <gml:posList>7.0 8.0 9.0 10.0 11.0 12.0</gml:posList>
+                        </gml:LineStringSegment>
+                    </gml:segments>
+                </gml:Curve>
+            </gml:curveMembers>
+        "#,
+            |sr| {
+                sr.parse_curve_members()
+                    .expect("Should parse curveMembers with Curves");
+                let geometries = sr.collect_geometries(None);
+                assert_eq!(geometries.multilinestring.len(), 2);
             },
         );
     }
