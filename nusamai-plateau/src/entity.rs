@@ -25,8 +25,6 @@ pub struct Entity {
     pub geometry_store: Arc<RwLock<GeometryStore>>,
     /// All appearances used in this city object
     pub appearance_store: Arc<RwLock<AppearanceStore>>,
-    /// Bounded by
-    pub bounded_by: Vec<BoundedBy>,
 }
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 pub struct BoundedBy {
@@ -97,7 +95,6 @@ impl FlattenTreeTransform {
             entity.root,
             &geom_store,
             &appearance_store,
-            &entity.bounded_by,
             &mut out,
             &None,
         );
@@ -108,7 +105,6 @@ impl FlattenTreeTransform {
         value: Value,
         geom_store: &Arc<RwLock<GeometryStore>>,
         appearance_store: &Arc<RwLock<AppearanceStore>>,
-        bounded_by: &Vec<BoundedBy>,
         out: &mut Vec<Entity>,
         parent: &Option<Parent>,
     ) -> Option<Value> {
@@ -136,7 +132,6 @@ impl FlattenTreeTransform {
                         value,
                         geom_store,
                         appearance_store,
-                        bounded_by,
                         out,
                         &new_parent,
                     ) {
@@ -184,7 +179,6 @@ impl FlattenTreeTransform {
                         base_url: url::Url::parse("file:///dummy").expect("should be valid"),
                         geometry_store: geom_store.clone(),
                         appearance_store: appearance_store.clone(),
-                        bounded_by: bounded_by.clone(),
                     });
 
                     if let Some(typename_value) = typename.as_deref() {
@@ -211,7 +205,6 @@ impl FlattenTreeTransform {
                         value,
                         geom_store,
                         appearance_store,
-                        bounded_by,
                         out,
                         parent,
                     ) {
