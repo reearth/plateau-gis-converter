@@ -91,13 +91,7 @@ impl FlattenTreeTransform {
         let geom_store = entity.geometry_store;
         let appearance_store = entity.appearance_store;
         let mut out = Vec::new();
-        Self::flatten_entity(
-            entity.root,
-            &geom_store,
-            &appearance_store,
-            &mut out,
-            &None,
-        );
+        Self::flatten_entity(entity.root, &geom_store, &appearance_store, &mut out, &None);
         out
     }
 
@@ -128,13 +122,9 @@ impl FlattenTreeTransform {
                 // Attributes
                 let mut new_attribs = Map::default();
                 for (key, value) in obj.attributes.drain(..) {
-                    if let Some(v) = Self::flatten_entity(
-                        value,
-                        geom_store,
-                        appearance_store,
-                        out,
-                        &new_parent,
-                    ) {
+                    if let Some(v) =
+                        Self::flatten_entity(value, geom_store, appearance_store, out, &new_parent)
+                    {
                         new_attribs.insert(key, v);
                     }
                 }
@@ -201,13 +191,9 @@ impl FlattenTreeTransform {
             Value::Array(mut arr) => {
                 let mut new_arr = Vec::with_capacity(arr.len());
                 for value in arr.drain(..) {
-                    if let Some(v) = Self::flatten_entity(
-                        value,
-                        geom_store,
-                        appearance_store,
-                        out,
-                        parent,
-                    ) {
+                    if let Some(v) =
+                        Self::flatten_entity(value, geom_store, appearance_store, out, parent)
+                    {
                         new_arr.push(v)
                     }
                 }
