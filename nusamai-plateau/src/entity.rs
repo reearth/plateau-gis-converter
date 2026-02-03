@@ -53,28 +53,26 @@ impl GeometricMergedownTransform {
         }
     }
 
-    fn collect_all_geoms(&mut self, obj: &mut Object) -> bool {
-        let mut is_feature = false;
+    fn collect_all_geoms(&mut self, obj: &mut Object) {
         if let ObjectStereotype::Feature { geometries, .. } = &mut obj.stereotype {
-            is_feature = true;
             self.geoms_buf.extend(geometries.drain(..));
         }
 
-        obj.attributes.retain(|_key, value| match value {
-            Value::Object(obj) => !self.collect_all_geoms(obj),
-            Value::Array(arr) => {
-                arr.retain_mut(|value| {
-                    if let Value::Object(obj) = value {
-                        !self.collect_all_geoms(obj)
-                    } else {
-                        true
+        for value in obj.attributes.values_mut() {
+            match value {
+                Value::Object(nested_obj) => {
+                    self.collect_all_geoms(nested_obj);
+                }
+                Value::Array(arr) => {
+                    for item in arr.iter_mut() {
+                        if let Value::Object(nested_obj) = item {
+                            self.collect_all_geoms(nested_obj);
+                        }
                     }
-                });
-                !arr.is_empty()
+                }
+                _ => {}
             }
-            _ => true,
-        });
-        is_feature
+        }
     }
 }
 
