@@ -58,21 +58,21 @@ impl GeometricMergedownTransform {
             self.geoms_buf.extend(geometries.drain(..));
         }
 
-        for value in obj.attributes.values_mut() {
-            match value {
-                Value::Object(nested_obj) => {
-                    self.collect_all_geoms(nested_obj);
-                }
-                Value::Array(arr) => {
-                    for item in arr.iter_mut() {
-                        if let Value::Object(nested_obj) = item {
-                            self.collect_all_geoms(nested_obj);
-                        }
+        obj.attributes.retain(|_key, value| match value {
+            Value::Object(nested_obj) => {
+                self.collect_all_geoms(nested_obj);
+                true
+            }
+            Value::Array(arr) => {
+                for item in arr.iter_mut() {
+                    if let Value::Object(nested_obj) = item {
+                        self.collect_all_geoms(nested_obj);
                     }
                 }
-                _ => {}
+                !arr.is_empty()
             }
-        }
+            _ => true,
+        });
     }
 }
 
