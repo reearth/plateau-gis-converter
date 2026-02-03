@@ -53,10 +53,13 @@ impl GeometricMergedownTransform {
         }
     }
 
-    fn collect_all_geoms(&mut self, obj: &mut Object) {
-        if let ObjectStereotype::Feature { geometries, .. } = &mut obj.stereotype {
+    fn collect_all_geoms(&mut self, obj: &mut Object) -> bool {
+        let is_feature = if let ObjectStereotype::Feature { geometries, .. } = &mut obj.stereotype {
             self.geoms_buf.extend(geometries.drain(..));
-        }
+            true
+        } else {
+            false
+        };
 
         obj.attributes.retain(|_key, value| match value {
             Value::Object(nested_obj) => {
@@ -64,15 +67,19 @@ impl GeometricMergedownTransform {
                 true
             }
             Value::Array(arr) => {
-                for item in arr.iter_mut() {
+                arr.retain_mut(|item| {
                     if let Value::Object(nested_obj) = item {
-                        self.collect_all_geoms(nested_obj);
+                        !self.collect_all_geoms(nested_obj)
+                    } else {
+                        true
                     }
-                }
+                });
                 !arr.is_empty()
             }
             _ => true,
         });
+
+        is_feature
     }
 }
 
