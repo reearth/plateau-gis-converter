@@ -64,10 +64,10 @@ impl GeometricMergedownTransform {
                 true
             }
             Value::Array(arr) => {
-                arr.retain_mut(|item| {
-                    if let Value::Object(nested_obj) = item {
-                        self.collect_all_geoms(nested_obj);
-                        !nested_obj.attributes.is_empty()
+                arr.retain_mut(|value| {
+                    if let Value::Object(obj) = value {
+                        self.collect_all_geoms(obj);
+                        !obj.attributes.is_empty()
                     } else {
                         true
                     }
