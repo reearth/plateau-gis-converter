@@ -175,7 +175,8 @@ impl FlattenTreeTransform {
                             // the kept DmGeometricAttribute should not have those parent* attributes
                             obj.stereotype = ObjectStereotype::Data;
                         } else if typename_value.starts_with("urf:") {
-                            // urf:* parents collect children geometries
+                            // urf:* parents collect children geometries, but not attributes
+                            obj.attributes.clear();
                         } else {
                             return None;
                         }
