@@ -139,7 +139,8 @@ impl CityGmlElement for Code {
                 Err(_) => {
                     // Resolution failed: value = original, no code
                     log::warn!("Failed to lookup code {text} form {code_space}");
-                    self.value = text;
+                    self.value = text.clone();
+                    self.code = Some(text);
                     return Ok(());
                 }
             }
