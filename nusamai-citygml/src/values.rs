@@ -95,8 +95,14 @@ pub struct Code {
 }
 
 impl Code {
-    pub fn new(value: String, code: Option<String>) -> Self {
-        Self { value, code }
+    pub fn new(value: String, code: String) -> Self {
+        Self {
+            value,
+            code: Some(code),
+        }
+    }
+    pub fn new_without_code(value: String) -> Self {
+        Self { value, code: None }
     }
     pub fn value(&self) -> &str {
         &self.value
@@ -152,7 +158,6 @@ impl CityGmlElement for Code {
         schema::Attribute::new(schema::TypeRef::Code)
     }
 }
-
 
 impl CityGmlElement for i64 {
     #[inline(never)]

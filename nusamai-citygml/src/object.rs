@@ -161,7 +161,7 @@ mod tests {
         let obj = Value::String("test".into());
         assert_eq!(obj.to_attribute_json(), json!("test"));
 
-        let obj = Value::Code(Code::new("12345".into(), Some("12345".into())));
+        let obj = Value::Code(Code::new("12345".into(), "12345".into()));
         assert_eq!(obj.to_attribute_json(), json!("12345"));
 
         let obj = Value::Integer(12345);
