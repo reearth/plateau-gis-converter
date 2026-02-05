@@ -120,6 +120,7 @@ impl CityGmlElement for Code {
 
         if let Some(code_space) = code_space {
             let base_url = st.context().source_url();
+            self.code = Some(text.clone());
             match st
                 .context()
                 .code_resolver()
@@ -128,22 +129,16 @@ impl CityGmlElement for Code {
                 Ok(Some(v)) => {
                     // Resolution succeeded: value = resolved, code = original
                     self.value = v;
-                    self.code = Some(text);
                     return Ok(());
                 }
-                Ok(None) => {
-                    // Resolution returned None: value = original, no code
-                    self.value = text;
-                    return Ok(());
-                }
+                Ok(None) => {}
                 Err(_) => {
                     // Resolution failed: value = original, no code
                     log::warn!("Failed to lookup code {text} form {code_space}");
-                    self.value = text.clone();
-                    self.code = Some(text);
-                    return Ok(());
                 }
             }
+            self.value = text.clone();
+            return Ok(());
         }
         // No codeSpace: value = text, no code
         self.value = text;
