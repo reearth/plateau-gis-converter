@@ -270,6 +270,12 @@ pub struct GeometryRef {
     pub len: u32,
     pub feature_id: Option<String>,
     pub feature_type: Option<String>,
+    /// Unresolved xlink:href references (polygon IDs to look up in surface_spans)
+    #[serde(default)]
+    pub unresolved_refs: Vec<LocalId>,
+    /// Resolved polygon ranges from xlink:href references (start, end) pairs
+    #[serde(default)]
+    pub resolved_ranges: Vec<(u32, u32)>,
 }
 
 pub type GeometryRefs = Vec<GeometryRef>;
@@ -312,6 +318,42 @@ pub struct GeometryStore {
     pub polygon_uvs: MultiPolygon<'static, [f64; 2]>,
 }
 
+impl GeometryStore {
+    /// Resolve xlink:href references in GeometryRefs by looking up surface_spans.
+    /// After this call, each unresolved ref is converted to a resolved polygon range
+    /// stored in the GeometryRef's unresolved_refs (cleared) — callers should check
+    /// both pos/len and the surface_spans directly for referenced polygon data.
+    pub fn resolve_refs(&self, geomrefs: &mut GeometryRefs) {
+        // Build lookup: LocalId -> (start, end)
+        let span_map: std::collections::HashMap<&LocalId, (u32, u32)> = self
+            .surface_spans
+            .iter()
+            .map(|s| (&s.id, (s.start, s.end)))
+            .collect();
+
+        for geomref in geomrefs.iter_mut() {
+            if geomref.unresolved_refs.is_empty() {
+                continue;
+            }
+            if geomref.len > 0 {
+                eprintln!(
+                    "Warning: GeometryRef has both inline polygons and unresolved xlink:href refs, \
+                     skipping href resolution for this ref"
+                );
+                continue;
+            }
+            let mut ranges = Vec::new();
+            for href in &geomref.unresolved_refs {
+                if let Some(&range) = span_map.get(href) {
+                    ranges.push(range);
+                }
+            }
+            geomref.resolved_ranges = ranges;
+            geomref.unresolved_refs.clear();
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct SurfaceSpan {
@@ -347,6 +389,9 @@ pub(crate) struct GeometryCollector {
 
     /// Orientable surfaces for each surface
     pub orientable_surfaces: Vec<OrientableSurface>,
+
+    /// Temporary: xlink:href IDs collected during geometry parsing (stripped of '#' prefix)
+    pub(crate) pending_hrefs: Vec<LocalId>,
 }
 
 impl GeometryCollector {

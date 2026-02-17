@@ -546,6 +546,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             id: curve_id,
                             feature_id: feature_id.clone(),
                             feature_type: feature_type.clone(),
+                            unresolved_refs: vec![],
+                            resolved_ranges: vec![],
                         });
                     }
                 }
@@ -604,6 +606,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             id: None,
                             feature_id: feature_id.clone(),
                             feature_type: feature_type.clone(),
+                            unresolved_refs: vec![],
+                            resolved_ranges: vec![],
                         });
                     }
                 }
@@ -726,7 +730,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     };
 
                     let poly_end = self.state.geometry_collector.multipolygon.len();
-                    if poly_end - poly_begin > 0 {
+                    let hrefs: Vec<_> = self.state.geometry_collector.pending_hrefs.drain(..).collect();
+                    if poly_end - poly_begin > 0 || !hrefs.is_empty() {
                         geomrefs.push(GeometryRef {
                             ty: geomtype,
                             property_name,
@@ -737,6 +742,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             id: surface_id.clone(),
                             feature_id: feature_id.clone(),
                             feature_type: feature_type.clone(),
+                            unresolved_refs: hrefs,
+                            resolved_ranges: vec![],
                         });
 
                         // record a partial surface span
@@ -787,6 +794,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 id: surface_id,
                 feature_id,
                 feature_type,
+                unresolved_refs: vec![],
+                resolved_ranges: vec![],
             });
         }
         Ok(())
@@ -808,7 +817,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
 
         let poly_end = self.state.geometry_collector.multipolygon.len();
-        if poly_end - poly_begin > 0 {
+        let hrefs: Vec<_> = self.state.geometry_collector.pending_hrefs.drain(..).collect();
+        if poly_end - poly_begin > 0 || !hrefs.is_empty() {
             geomrefs.push(GeometryRef {
                 ty: GeometryType::Solid,
                 property_name,
@@ -819,6 +829,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 id: None,
                 feature_id,
                 feature_type,
+                unresolved_refs: hrefs,
+                resolved_ranges: vec![],
             });
         }
         Ok(())
@@ -866,6 +878,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             id: None,
                             feature_id: feature_id.clone(),
                             feature_type: feature_type.clone(),
+                            unresolved_refs: vec![],
+                            resolved_ranges: vec![],
                         });
                     }
                 }
@@ -1065,6 +1079,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 id: surface_id.clone(),
                                 feature_id: feature_id.clone(),
                                 feature_type: feature_type.clone(),
+                                unresolved_refs: vec![],
+                                resolved_ranges: vec![],
                             });
                         }
                         // record a partial surface span
@@ -1091,6 +1107,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 id: surface_id.clone(),
                                 feature_id: feature_id.clone(),
                                 feature_type: feature_type.clone(),
+                                unresolved_refs: vec![],
+                                resolved_ranges: vec![],
                             });
                         }
                     }
@@ -1106,6 +1124,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 id: surface_id.clone(),
                                 feature_id: feature_id.clone(),
                                 feature_type: feature_type.clone(),
+                                unresolved_refs: vec![],
+                                resolved_ranges: vec![],
                             });
                         }
                     }
@@ -1177,6 +1197,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 id: None,
                 feature_id,
                 feature_type,
+                unresolved_refs: vec![],
+                resolved_ranges: vec![],
             });
         }
         Ok(())
@@ -1391,7 +1413,23 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            self.parse_surface_member()?;
+                            // Check for xlink:href on surfaceMember
+                            let mut href_found = false;
+                            for attr in start.attributes().flatten() {
+                                let (ans, aln) = self.reader.resolve_attribute(attr.key);
+                                if ans == Bound(XLINK_NS) && aln.as_ref() == b"href" {
+                                    let href = String::from_utf8_lossy(attr.value.as_ref()).to_string();
+                                    let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
+                                    self.state.geometry_collector.pending_hrefs.push(LocalId::from(clean_id));
+                                    href_found = true;
+                                    break;
+                                }
+                            }
+                            if !href_found {
+                                self.parse_surface_member()?;
+                            }
+                            // If href_found, the expanded empty element's End event
+                            // will be consumed by the Event::End branch below.
                         }
                         (_, localname) => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1461,17 +1499,24 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
+                    // Check for xlink:href on surfaceMember
+                    let mut href_found = false;
                     for attr in start.attributes().flatten() {
-                        let (nsres, localname) = self.reader.resolve_attribute(attr.key);
-                        if nsres == Bound(XLINK_NS) && localname.as_ref() == b"href" {
+                        let (ans, aln) = self.reader.resolve_attribute(attr.key);
+                        if ans == Bound(XLINK_NS) && aln.as_ref() == b"href" {
                             let href = String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                            surface_id = Some(LocalId::from(href));
+                            surface_id = Some(LocalId::from(href.clone()));
+                            let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
+                            self.state.geometry_collector.pending_hrefs.push(LocalId::from(clean_id));
+                            href_found = true;
                             break;
                         }
                     }
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            self.parse_surface_member()?;
+                            if !href_found {
+                                self.parse_surface_member()?;
+                            }
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1764,7 +1809,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 if nsres == Bound(XLINK_NS) && localname.as_ref() == b"href" {
                                     let href =
                                         String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                                    surface_id = Some(LocalId::from(href));
+                                    surface_id = Some(LocalId::from(href.clone()));
+                                    // Strip '#' prefix for surface_spans lookup
+                                    let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
+                                    self.state.geometry_collector.pending_hrefs.push(LocalId::from(clean_id));
                                     break;
                                 }
                             }
