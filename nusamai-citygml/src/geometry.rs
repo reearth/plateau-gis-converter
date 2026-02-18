@@ -327,13 +327,6 @@ impl GeometryStore {
             if geomref.unresolved_refs.is_empty() {
                 continue;
             }
-            if geomref.len > 0 {
-                log::warn!(
-                    "Warning: GeometryRef has both inline polygons and unresolved xlink:href refs, \
-                     skipping href resolution for this ref"
-                );
-                continue;
-            }
             let mut ranges = Vec::new();
             for href in &geomref.unresolved_refs {
                 if let Some(&range) = span_map.get(href) {

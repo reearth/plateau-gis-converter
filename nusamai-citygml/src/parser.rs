@@ -1760,11 +1760,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"baseSurface") => {
                             if let Some(id) = extract_xlink_href(&start, self.reader) {
+                                let local_id = LocalId::from(id.clone());
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push(LocalId::from(id.clone()));
-                                surface_id = Some(LocalId::from(id));
+                                    .push(local_id);
+                                surface_id = Some(local_id);
                             }
                         }
                         _ => {
