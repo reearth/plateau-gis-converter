@@ -270,6 +270,12 @@ pub struct GeometryRef {
     pub len: u32,
     pub feature_id: Option<String>,
     pub feature_type: Option<String>,
+    /// Unresolved xlink:href references (polygon IDs to look up in surface_spans)
+    #[serde(default)]
+    pub unresolved_refs: Vec<LocalId>,
+    /// Resolved polygon ranges from xlink:href references (start, end) pairs
+    #[serde(default)]
+    pub resolved_ranges: Vec<(u32, u32)>,
 }
 
 pub type GeometryRefs = Vec<GeometryRef>;
@@ -298,12 +304,6 @@ pub struct GeometryStore {
     /// List of surface ids and their spans in `multipolygon`
     pub surface_spans: Vec<SurfaceSpan>,
 
-    /// Lists of surface for composite surface
-    pub composite_surfaces: Vec<LocalId>,
-
-    /// Orientable surfaces for each surface
-    pub orientable_surfaces: Vec<OrientableSurface>,
-
     /// Assigned materials for each polygon. Empty if appearance resolution is not enabled.
     pub polygon_materials: Vec<Option<u32>>,
     /// Assigned textures for each polygon. Empty if appearance resolution is not enabled.
@@ -312,19 +312,44 @@ pub struct GeometryStore {
     pub polygon_uvs: MultiPolygon<'static, [f64; 2]>,
 }
 
+impl GeometryStore {
+    /// Resolve xlink:href references in GeometryRefs by looking up surface_spans.
+    /// After this call, unresolved refs are converted to resolved polygon ranges
+    pub fn resolve_refs(&self, geomrefs: &mut GeometryRefs) {
+        // Build lookup: LocalId -> (start, end)
+        let span_map: std::collections::HashMap<&LocalId, (u32, u32)> = self
+            .surface_spans
+            .iter()
+            .map(|s| (&s.id, (s.start, s.end)))
+            .collect();
+
+        for geomref in geomrefs.iter_mut() {
+            if geomref.unresolved_refs.is_empty() {
+                continue;
+            }
+            let mut ranges = Vec::new();
+            for href in &geomref.unresolved_refs {
+                if let Some(&range) = span_map.get(href) {
+                    ranges.push(range);
+                } else {
+                    log::warn!(
+                        "Warning: GeometryRef has unresolved xlink:href reference to id '{:?}', skipping",
+                        href
+                    );
+                }
+            }
+            geomref.resolved_ranges = ranges;
+            geomref.unresolved_refs.clear();
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct SurfaceSpan {
     pub id: LocalId,
     pub start: u32,
     pub end: u32,
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub struct OrientableSurface {
-    pub surface_id: LocalId,
-    pub reverse: bool,
 }
 
 /// Temporary storage for the parser to collect geometries.
@@ -342,11 +367,8 @@ pub(crate) struct GeometryCollector {
     /// surface polygon spans in `multipolygon`
     pub surface_spans: Vec<SurfaceSpan>,
 
-    /// Lists of surface for composite surface
-    pub composite_surfaces: Vec<LocalId>,
-
-    /// Orientable surfaces for each surface
-    pub orientable_surfaces: Vec<OrientableSurface>,
+    /// xlink:href IDs collected during geometry parsing (stripped of '#' prefix)
+    pub(crate) pending_hrefs: Vec<LocalId>,
 }
 
 impl GeometryCollector {
@@ -422,8 +444,6 @@ impl GeometryCollector {
             multipoint: self.multipoint,
             ring_ids: self.ring_ids,
             surface_spans: self.surface_spans,
-            composite_surfaces: self.composite_surfaces,
-            orientable_surfaces: self.orientable_surfaces,
             ..Default::default()
         }
     }
