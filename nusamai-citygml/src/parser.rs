@@ -1407,17 +1407,14 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            if let Some(href) = extract_xlink_href(&start, self.reader) {
-                                let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
+                            if let Some(id) = extract_xlink_href(&start, self.reader) {
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push(LocalId::from(clean_id));
+                                    .push(LocalId::from(id));
                             } else {
                                 self.parse_surface_member()?;
                             }
-                            // If href_found, the expanded empty element's End event
-                            // will be consumed by the Event::End branch below.
                         }
                         (_, localname) => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1487,12 +1484,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            if let Some(href) = extract_xlink_href(&start, self.reader) {
-                                let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
+                            if let Some(id) = extract_xlink_href(&start, self.reader) {
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push(LocalId::from(clean_id));
+                                    .push(LocalId::from(id));
                             } else {
                                 self.parse_surface_member()?;
                             }
@@ -1757,13 +1753,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"baseSurface") => {
-                            if let Some(href) = extract_xlink_href(&start, self.reader) {
-                                let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
+                            if let Some(id) = extract_xlink_href(&start, self.reader) {
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push(LocalId::from(clean_id.clone()));
-                                surface_id = Some(LocalId::from(clean_id));
+                                    .push(LocalId::from(id.clone()));
+                                surface_id = Some(LocalId::from(id));
                             }
                         }
                         _ => {
@@ -2078,7 +2073,8 @@ fn extract_xlink_href(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Op
     for attr in start.attributes().flatten() {
         let (nsres, localname) = reader.resolve_attribute(attr.key);
         if nsres == Bound(XLINK_NS) && localname.as_ref() == b"href" {
-            return Some(String::from_utf8_lossy(attr.value.as_ref()).to_string());
+            let href = String::from_utf8_lossy(attr.value.as_ref());
+            return Some(href.strip_prefix('#').unwrap_or(&href).to_string());
         }
     }
     None
