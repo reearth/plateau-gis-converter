@@ -18,7 +18,7 @@ use crate::{
         GeometryType, GmlGeometryType, PropertyType,
     },
     namespace::{wellknown_prefix_from_nsres, APP_2_NS, GML31_NS},
-    CityGmlAttribute, LocalId, OrientableSurface, SurfaceSpan, XLINK_NS,
+    CityGmlAttribute, LocalId, SurfaceSpan, XLINK_NS,
 };
 
 static PROPERTY_PATTERN: Lazy<Regex> =
@@ -1020,25 +1020,9 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             GeometryType::Surface
                         }
                         (Bound(GML31_NS), b"OrientableSurface") => {
-                            let mut orientation = "+".to_string();
-                            for attr in start.attributes().flatten() {
-                                let (_, localname) = self.reader.resolve_attribute(attr.key);
-                                if localname.as_ref() == b"orientation" {
-                                    let value =
-                                        String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                                    orientation = value;
-                                    break;
-                                }
-                            }
                             let base_surface_id = self.parse_orientable_surface()?;
                             if let Some(base_surface_id) = base_surface_id {
-                                surface_id = Some(base_surface_id.clone());
-                                self.state.geometry_collector.orientable_surfaces.push(
-                                    OrientableSurface {
-                                        surface_id: base_surface_id,
-                                        reverse: orientation == "-",
-                                    },
-                                );
+                                surface_id = Some(base_surface_id);
                             }
                             poly_end = Some(self.state.geometry_collector.multipolygon.len());
                             GeometryType::Surface
@@ -1423,24 +1407,13 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            // Check for xlink:href on surfaceMember
-                            let mut href_found = false;
-                            for attr in start.attributes().flatten() {
-                                let (ans, aln) = self.reader.resolve_attribute(attr.key);
-                                if ans == Bound(XLINK_NS) && aln.as_ref() == b"href" {
-                                    let href =
-                                        String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                                    let clean_id =
-                                        href.strip_prefix('#').unwrap_or(&href).to_string();
-                                    self.state
-                                        .geometry_collector
-                                        .pending_hrefs
-                                        .push(LocalId::from(clean_id));
-                                    href_found = true;
-                                    break;
-                                }
-                            }
-                            if !href_found {
+                            if let Some(href) = extract_xlink_href(&start, self.reader) {
+                                let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
+                                self.state
+                                    .geometry_collector
+                                    .pending_hrefs
+                                    .push(LocalId::from(clean_id));
+                            } else {
                                 self.parse_surface_member()?;
                             }
                             // If href_found, the expanded empty element's End event
@@ -1507,32 +1480,20 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_composite_surface(&mut self) -> Result<Vec<LocalId>, ParseError> {
-        let mut surface_id = None;
-        let mut result = Vec::new();
+    fn parse_composite_surface(&mut self) -> Result<(), ParseError> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
-                    // Check for xlink:href on surfaceMember
-                    let mut href_found = false;
-                    for attr in start.attributes().flatten() {
-                        let (ans, aln) = self.reader.resolve_attribute(attr.key);
-                        if ans == Bound(XLINK_NS) && aln.as_ref() == b"href" {
-                            let href = String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                            surface_id = Some(LocalId::from(href.clone()));
-                            let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
-                            self.state
-                                .geometry_collector
-                                .pending_hrefs
-                                .push(LocalId::from(clean_id));
-                            href_found = true;
-                            break;
-                        }
-                    }
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            if !href_found {
+                            if let Some(href) = extract_xlink_href(&start, self.reader) {
+                                let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
+                                self.state
+                                    .geometry_collector
+                                    .pending_hrefs
+                                    .push(LocalId::from(clean_id));
+                            } else {
                                 self.parse_surface_member()?;
                             }
                         }
@@ -1543,19 +1504,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             )))
                         }
                     };
-                    // record a partial surface span
-                    if let Some(ref id) = surface_id {
-                        result.push(id.clone());
-                        self.state
-                            .geometry_collector
-                            .composite_surfaces
-                            .push(id.clone());
-                    }
                 }
                 Ok(Event::End(end)) => {
                     let (nsres, localname) = self.reader.resolve_element(end.name());
                     if nsres == Bound(GML31_NS) && localname.as_ref() == b"CompositeSurface" {
-                        return Ok(result);
+                        return Ok(());
                     }
                 }
                 Ok(Event::Text(_)) => {
@@ -1569,7 +1522,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_surface(&mut self) -> Result<Vec<LocalId>, ParseError> {
+    fn parse_surface(&mut self) -> Result<(), ParseError> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
@@ -1593,7 +1546,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 Ok(Event::End(end)) => {
                     let (nsres, localname) = self.reader.resolve_element(end.name());
                     if nsres == Bound(GML31_NS) && localname.as_ref() == b"patches" {
-                        return Ok(Vec::new());
+                        return Ok(());
                     }
                 }
                 Ok(Event::Text(_)) => {
@@ -1619,25 +1572,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             self.parse_composite_surface()?;
                         }
                         (Bound(GML31_NS), b"OrientableSurface") => {
-                            let mut orientation = "+".to_string();
-                            for attr in start.attributes().flatten() {
-                                let (_, localname) = self.reader.resolve_attribute(attr.key);
-                                if localname.as_ref() == b"orientation" {
-                                    let value =
-                                        String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                                    orientation = value;
-                                    break;
-                                }
-                            }
-                            let base_surface_id = self.parse_orientable_surface()?;
-                            if let Some(base_surface_id) = base_surface_id {
-                                self.state.geometry_collector.orientable_surfaces.push(
-                                    OrientableSurface {
-                                        surface_id: base_surface_id,
-                                        reverse: orientation == "-",
-                                    },
-                                );
-                            }
+                            self.parse_orientable_surface()?;
                         }
                         (Bound(GML31_NS), b"Surface") => {
                             self.parse_surface()?;
@@ -1822,21 +1757,13 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"baseSurface") => {
-                            for attr in start.attributes().flatten() {
-                                let (nsres, localname) = self.reader.resolve_attribute(attr.key);
-                                if nsres == Bound(XLINK_NS) && localname.as_ref() == b"href" {
-                                    let href =
-                                        String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                                    surface_id = Some(LocalId::from(href.clone()));
-                                    // Strip '#' prefix for surface_spans lookup
-                                    let clean_id =
-                                        href.strip_prefix('#').unwrap_or(&href).to_string();
-                                    self.state
-                                        .geometry_collector
-                                        .pending_hrefs
-                                        .push(LocalId::from(clean_id));
-                                    break;
-                                }
+                            if let Some(href) = extract_xlink_href(&start, self.reader) {
+                                let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
+                                self.state
+                                    .geometry_collector
+                                    .pending_hrefs
+                                    .push(LocalId::from(clean_id.clone()));
+                                surface_id = Some(LocalId::from(clean_id));
                             }
                         }
                         _ => {
@@ -2142,6 +2069,16 @@ fn extract_gmlid(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Option<
         if nsres == Bound(GML31_NS) && localname.as_ref() == b"id" {
             let id = String::from_utf8_lossy(attr.value.as_ref()).to_string();
             return Some(LocalId::from(id));
+        }
+    }
+    None
+}
+
+fn extract_xlink_href(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Option<String> {
+    for attr in start.attributes().flatten() {
+        let (nsres, localname) = reader.resolve_attribute(attr.key);
+        if nsres == Bound(XLINK_NS) && localname.as_ref() == b"href" {
+            return Some(String::from_utf8_lossy(attr.value.as_ref()).to_string());
         }
     }
     None
