@@ -1764,7 +1764,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push(local_id);
+                                    .push(local_id.clone());
                                 surface_id = Some(local_id);
                             }
                         }
