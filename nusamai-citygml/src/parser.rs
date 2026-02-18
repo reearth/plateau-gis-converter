@@ -730,7 +730,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     };
 
                     let poly_end = self.state.geometry_collector.multipolygon.len();
-                    let hrefs: Vec<_> = self.state.geometry_collector.pending_hrefs.drain(..).collect();
+                    let hrefs: Vec<_> = self
+                        .state
+                        .geometry_collector
+                        .pending_hrefs
+                        .drain(..)
+                        .collect();
                     if poly_end - poly_begin > 0 || !hrefs.is_empty() {
                         geomrefs.push(GeometryRef {
                             ty: geomtype,
@@ -817,7 +822,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
 
         let poly_end = self.state.geometry_collector.multipolygon.len();
-        let hrefs: Vec<_> = self.state.geometry_collector.pending_hrefs.drain(..).collect();
+        let hrefs: Vec<_> = self
+            .state
+            .geometry_collector
+            .pending_hrefs
+            .drain(..)
+            .collect();
         if poly_end - poly_begin > 0 || !hrefs.is_empty() {
             geomrefs.push(GeometryRef {
                 ty: GeometryType::Solid,
@@ -1418,9 +1428,14 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             for attr in start.attributes().flatten() {
                                 let (ans, aln) = self.reader.resolve_attribute(attr.key);
                                 if ans == Bound(XLINK_NS) && aln.as_ref() == b"href" {
-                                    let href = String::from_utf8_lossy(attr.value.as_ref()).to_string();
-                                    let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
-                                    self.state.geometry_collector.pending_hrefs.push(LocalId::from(clean_id));
+                                    let href =
+                                        String::from_utf8_lossy(attr.value.as_ref()).to_string();
+                                    let clean_id =
+                                        href.strip_prefix('#').unwrap_or(&href).to_string();
+                                    self.state
+                                        .geometry_collector
+                                        .pending_hrefs
+                                        .push(LocalId::from(clean_id));
                                     href_found = true;
                                     break;
                                 }
@@ -1507,7 +1522,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             let href = String::from_utf8_lossy(attr.value.as_ref()).to_string();
                             surface_id = Some(LocalId::from(href.clone()));
                             let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
-                            self.state.geometry_collector.pending_hrefs.push(LocalId::from(clean_id));
+                            self.state
+                                .geometry_collector
+                                .pending_hrefs
+                                .push(LocalId::from(clean_id));
                             href_found = true;
                             break;
                         }
@@ -1811,8 +1829,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                         String::from_utf8_lossy(attr.value.as_ref()).to_string();
                                     surface_id = Some(LocalId::from(href.clone()));
                                     // Strip '#' prefix for surface_spans lookup
-                                    let clean_id = href.strip_prefix('#').unwrap_or(&href).to_string();
-                                    self.state.geometry_collector.pending_hrefs.push(LocalId::from(clean_id));
+                                    let clean_id =
+                                        href.strip_prefix('#').unwrap_or(&href).to_string();
+                                    self.state
+                                        .geometry_collector
+                                        .pending_hrefs
+                                        .push(LocalId::from(clean_id));
                                     break;
                                 }
                             }
