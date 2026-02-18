@@ -113,14 +113,27 @@ fn load_building_lod4_example() {
     let mut multipolygons = 0;
     let mut buildings = 0;
     let mut cityobjectgroups = 0;
+    let mut resolved_polygons: u32 = 0;
 
     assert_eq!(cityobjs.len(), 1527);
 
     for cityobj in cityobjs {
-        multipolygons += cityobj.geometries.multipolygon.len();
-        match cityobj.cityobj {
-            TopLevelCityObject::Building(_building) => {
+        let common::CityObject {
+            cityobj: mut inner_obj,
+            geometries: geom_store,
+        } = cityobj;
+        multipolygons += geom_store.multipolygon.len();
+        match &mut inner_obj {
+            TopLevelCityObject::Building(building) => {
                 buildings += 1;
+                geom_store.resolve_refs(&mut building.geometries);
+                for geomref in &building.geometries {
+                    assert!(geomref.unresolved_refs.is_empty());
+                    resolved_polygons += geomref.len;
+                    for &(start, end) in &geomref.resolved_ranges {
+                        resolved_polygons += end - start;
+                    }
+                }
             }
             TopLevelCityObject::CityObjectGroup(_group) => {
                 cityobjectgroups += 1;
@@ -132,6 +145,7 @@ fn load_building_lod4_example() {
     assert_eq!(buildings, 1485);
     assert_eq!(cityobjectgroups, 42);
     assert_eq!(multipolygons, 197633);
+    assert_eq!(resolved_polygons, 151720);
 }
 
 #[test]
