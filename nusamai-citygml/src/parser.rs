@@ -1061,8 +1061,14 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             )))
                         }
                     };
+                    let hrefs: Vec<_> = self
+                        .state
+                        .geometry_collector
+                        .pending_hrefs
+                        .drain(..)
+                        .collect();
                     if let Some(poly_end) = poly_end {
-                        if poly_end - poly_begin > 0 {
+                        if poly_end - poly_begin > 0 || !hrefs.is_empty() {
                             geomrefs.push(GeometryRef {
                                 ty: geomtype,
                                 property_name,
@@ -1073,7 +1079,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 id: surface_id.clone(),
                                 feature_id: feature_id.clone(),
                                 feature_type: feature_type.clone(),
-                                unresolved_refs: vec![],
+                                unresolved_refs: hrefs,
                                 resolved_ranges: vec![],
                             });
                         }
