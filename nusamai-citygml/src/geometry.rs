@@ -371,7 +371,7 @@ pub(crate) struct GeometryCollector {
     /// surface polygon spans in `multipolygon`
     pub surface_spans: Vec<SurfaceSpan>,
 
-    /// Temporary: xlink:href IDs collected during geometry parsing (stripped of '#' prefix)
+    /// xlink:href IDs collected during geometry parsing (stripped of '#' prefix)
     pub(crate) pending_hrefs: Vec<LocalId>,
 }
 
