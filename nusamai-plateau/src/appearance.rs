@@ -171,12 +171,12 @@ impl AppearanceStore {
                     theme_src
                         .ring_id_to_texture
                         .drain()
-                        .filter_map(|(ring_id, (idx, ls))| {
+                        .map(|(ring_id, (idx, ls))| {
                             let (offset, inserted) = idx_map.insert_full(idx);
                             if inserted {
                                 self.textures.push(other.textures[idx as usize].clone());
                             }
-                            Some((ring_id, ((base_idx + offset) as u32, ls)))
+                            (ring_id, ((base_idx + offset) as u32, ls))
                         })
                         .collect()
                 };
