@@ -1020,7 +1020,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             GeometryType::Surface
                         }
                         (Bound(GML31_NS), b"OrientableSurface") => {
-                            let base_surface_id = self.parse_orientable_surface()?;
+                            let flip = is_negative_orientation(&start);
+                            let base_surface_id = self.parse_orientable_surface(flip)?;
                             if let Some(base_surface_id) = base_surface_id {
                                 surface_id = Some(base_surface_id);
                             }
@@ -1417,7 +1418,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push(LocalId::from(id));
+                                    .push((LocalId::from(id), false));
                             } else {
                                 self.parse_surface_member()?;
                             }
@@ -1494,7 +1495,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push(LocalId::from(id));
+                                    .push((LocalId::from(id), false));
                             } else {
                                 self.parse_surface_member()?;
                             }
@@ -1574,7 +1575,8 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             self.parse_composite_surface()?;
                         }
                         (Bound(GML31_NS), b"OrientableSurface") => {
-                            self.parse_orientable_surface()?;
+                            let flip = is_negative_orientation(&start);
+                            self.parse_orientable_surface(flip)?;
                         }
                         (Bound(GML31_NS), b"Surface") => {
                             self.parse_surface()?;
@@ -1751,7 +1753,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_orientable_surface(&mut self) -> Result<Option<LocalId>, ParseError> {
+    fn parse_orientable_surface(&mut self, flip: bool) -> Result<Option<LocalId>, ParseError> {
         let mut surface_id = None;
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
@@ -1764,7 +1766,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push(local_id.clone());
+                                    .push((local_id.clone(), flip));
                                 surface_id = Some(local_id);
                             }
                         }
@@ -2063,6 +2065,13 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
 
         Ok(())
     }
+}
+
+fn is_negative_orientation(start: &BytesStart) -> bool {
+    start
+        .attributes()
+        .flatten()
+        .any(|a| a.key.as_ref() == b"orientation" && a.value.as_ref() == b"-")
 }
 
 fn extract_gmlid(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Option<LocalId> {

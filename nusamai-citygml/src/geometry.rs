@@ -270,12 +270,12 @@ pub struct GeometryRef {
     pub len: u32,
     pub feature_id: Option<String>,
     pub feature_type: Option<String>,
-    /// Unresolved xlink:href references (polygon IDs to look up in surface_spans)
+    /// Unresolved xlink:href references (polygon ID, flip winding) to look up in surface_spans
     #[serde(default)]
-    pub unresolved_refs: Vec<LocalId>,
-    /// Resolved polygon ranges from xlink:href references (start, end) pairs
+    pub unresolved_refs: Vec<(LocalId, bool)>,
+    /// Resolved polygon ranges from xlink:href references (start, end, flip winding)
     #[serde(default)]
-    pub resolved_ranges: Vec<(u32, u32)>,
+    pub resolved_ranges: Vec<(u32, u32, bool)>,
 }
 
 pub type GeometryRefs = Vec<GeometryRef>;
@@ -328,9 +328,9 @@ impl GeometryStore {
                 continue;
             }
             let mut ranges = Vec::new();
-            for href in &geomref.unresolved_refs {
-                if let Some(&range) = span_map.get(href) {
-                    ranges.push(range);
+            for (href, flip) in &geomref.unresolved_refs {
+                if let Some(&(start, end)) = span_map.get(href) {
+                    ranges.push((start, end, *flip));
                 } else {
                     log::warn!(
                         "Warning: GeometryRef has unresolved xlink:href reference to id '{:?}', skipping",
@@ -367,8 +367,8 @@ pub(crate) struct GeometryCollector {
     /// surface polygon spans in `multipolygon`
     pub surface_spans: Vec<SurfaceSpan>,
 
-    /// xlink:href IDs collected during geometry parsing (stripped of '#' prefix)
-    pub(crate) pending_hrefs: Vec<LocalId>,
+    /// xlink:href IDs collected during geometry parsing (stripped of '#' prefix, flip winding)
+    pub(crate) pending_hrefs: Vec<(LocalId, bool)>,
 }
 
 impl GeometryCollector {

@@ -130,7 +130,7 @@ fn load_building_lod4_example() {
                 for geomref in &building.geometries {
                     assert!(geomref.unresolved_refs.is_empty());
                     resolved_polygons += geomref.len;
-                    for &(start, end) in &geomref.resolved_ranges {
+                    for &(start, end, _flip) in &geomref.resolved_ranges {
                         resolved_polygons += end - start;
                     }
                 }
@@ -1081,6 +1081,45 @@ fn load_cityfurniture_curvemembers_example() {
 
     // Verify that curveMembers with Curve containing LineStringSegment was parsed as multilinestring
     assert_eq!(geometries.multilinestring.len(), 1);
+}
+
+#[test]
+fn load_tunnel_orientable_surface_example() {
+    // OrientableSurface with orientation="-" and xlink:href must be resolved with flip flag
+    let cityobjs = load_cityobjs("./tests/data/takeshiba/udx/tun/53393690_tun_6697_40_op.gml");
+    let common::CityObject {
+        cityobj: mut obj,
+        geometries: store,
+    } = cityobjs.into_iter().next().unwrap();
+    let TopLevelCityObject::Tunnel(ref mut tunnel) = obj else {
+        panic!("Expected Tunnel")
+    };
+
+    assert_eq!(
+        tunnel
+            .interior_hollow_space
+            .iter()
+            .flat_map(|hs| &hs.geometries)
+            .map(|r| r.unresolved_refs.len())
+            .sum::<usize>(),
+        17
+    );
+
+    for hs in &mut tunnel.interior_hollow_space {
+        store.resolve_refs(&mut hs.geometries);
+        for r in &hs.geometries {
+            assert!(r.unresolved_refs.is_empty());
+        }
+    }
+
+    let resolved: Vec<_> = tunnel
+        .interior_hollow_space
+        .iter()
+        .flat_map(|hs| &hs.geometries)
+        .flat_map(|r| &r.resolved_ranges)
+        .collect();
+    assert_eq!(resolved.len(), 17);
+    assert!(resolved.iter().all(|&&(_, _, flip)| flip));
 }
 
 #[test]
