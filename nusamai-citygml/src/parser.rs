@@ -1753,10 +1753,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_orientable_surface(
-        &mut self,
-        flip: bool,
-    ) -> Result<Option<LocalId>, ParseError> {
+    fn parse_orientable_surface(&mut self, flip: bool) -> Result<Option<LocalId>, ParseError> {
         let mut surface_id = None;
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {

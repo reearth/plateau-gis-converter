@@ -1087,8 +1087,10 @@ fn load_cityfurniture_curvemembers_example() {
 fn load_tunnel_orientable_surface_example() {
     // OrientableSurface with orientation="-" and xlink:href must be resolved with flip flag
     let cityobjs = load_cityobjs("./tests/data/takeshiba/udx/tun/53393690_tun_6697_40_op.gml");
-    let common::CityObject { cityobj: mut obj, geometries: store } =
-        cityobjs.into_iter().next().unwrap();
+    let common::CityObject {
+        cityobj: mut obj,
+        geometries: store,
+    } = cityobjs.into_iter().next().unwrap();
     let TopLevelCityObject::Tunnel(ref mut tunnel) = obj else {
         panic!("Expected Tunnel")
     };
