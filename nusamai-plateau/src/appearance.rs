@@ -95,7 +95,7 @@ impl AppearanceStore {
                         if let TextureAssociation::TexCoordList(tcl) = tex_assoc {
                             let surface_id = tcl.target.clone();
                             let mut ring_ids = Vec::new();
-                            
+
                             for (ring, coords) in
                                 tcl.rings.into_iter().zip(tcl.coords_list.into_iter())
                             {
@@ -107,7 +107,7 @@ impl AppearanceStore {
                                 theme.ring_id_to_texture.insert(ring.clone(), (tex_idx, ls));
                                 ring_ids.push(ring);
                             }
-                            
+
                             // Store surface-to-rings mapping
                             if !ring_ids.is_empty() {
                                 theme.surface_id_to_rings.insert(surface_id, ring_ids);
@@ -134,18 +134,15 @@ impl AppearanceStore {
         ring_ids: &[Option<LocalId>],
         surface_spans: &[SurfaceSpan],
     ) {
-
         // merge texture
         {
             let mut idx_map = indexmap::IndexSet::new();
             let base_idx = self.textures.len();
-            
+
             // If ring_ids is empty or all None, we can't filter - transfer all entries
             // Otherwise, only transfer entries for rings in ring_ids
-            let ring_id_set: std::collections::HashSet<_> = ring_ids
-                .iter()
-                .filter_map(|v| v.clone())
-                .collect();
+            let ring_id_set: std::collections::HashSet<_> =
+                ring_ids.iter().filter_map(|v| v.clone()).collect();
             let filter_by_ring_ids = !ring_id_set.is_empty();
 
             for (theme_name, theme_src) in other.themes.iter_mut() {
@@ -192,11 +189,9 @@ impl AppearanceStore {
         // merge surface_id_to_rings (for texture surface-to-ring mapping)
         // Only transfer entries where at least one ring is in ring_ids (if ring_ids is not empty)
         {
-            let ring_id_set: std::collections::HashSet<_> = ring_ids
-                .iter()
-                .filter_map(|v| v.clone())
-                .collect();
-            
+            let ring_id_set: std::collections::HashSet<_> =
+                ring_ids.iter().filter_map(|v| v.clone()).collect();
+
             for (theme_name, theme_src) in other.themes.iter_mut() {
                 let entries: Vec<_> = if ring_id_set.is_empty() {
                     // If ring_ids is empty or all None, transfer all surface_id_to_rings entries
