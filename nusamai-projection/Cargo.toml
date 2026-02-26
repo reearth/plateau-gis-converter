@@ -4,5 +4,5 @@ name = "nusamai-projection"
 version = "0.1.0"
 
 [dependencies]
-japan-geoid = "0.4.4"
-thiserror = "2.0.12"
+japan-geoid = { version = "0.6.0", features = ["gsigeo2011"] }
+thiserror = "2.0.18"
