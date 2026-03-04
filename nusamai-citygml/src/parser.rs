@@ -65,6 +65,10 @@ struct InternalState<'a> {
     /// Stack of feature IDs and types (elements with gml:id)
     /// Each entry is (feature_id, feature_type, path_depth)
     feature_stack: Vec<(String, String, usize)>,
+
+    /// Cross-file feature xlink:href refs collected during parsing
+    /// Each entry is (file_url, gml_id)
+    pub pending_feature_hrefs: Vec<(Url, String)>,
 }
 
 impl<'a> InternalState<'a> {
@@ -79,6 +83,7 @@ impl<'a> InternalState<'a> {
             geometry_collector: GeometryCollector::default(),
             context,
             feature_stack: Vec::new(),
+            pending_feature_hrefs: Vec::new(),
         }
     }
 }
@@ -215,7 +220,20 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         .current_start
                         .clone_from(&Some(start.into_owned()));
 
-                    logic(self)?;
+                    // Check for cross-file feature xlink:href (element is an empty ref)
+                    let cross_file_href = extract_xlink_href(
+                        self.state.current_start.as_ref().unwrap(),
+                        self.reader,
+                        self.state.context.source_url(),
+                    )
+                    .and_then(|(file_url, id)| file_url.map(|u| (u, id)));
+
+                    if let Some((file_url, id)) = cross_file_href {
+                        self.state.pending_feature_hrefs.push((file_url, id));
+                        self.skip_current_element()?;
+                    } else {
+                        logic(self)?;
+                    }
                 }
                 Ok(Event::End(_)) => {
                     let popped_depth = self.state.path_stack_indices.len();
@@ -365,6 +383,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
 
     pub fn id_to_integer_id(&mut self, id: String) -> LocalId {
         LocalId::from(id)
+    }
+
+    pub fn collect_feature_hrefs(&mut self) -> Vec<(Url, String)> {
+        std::mem::take(&mut self.state.pending_feature_hrefs)
     }
 
     pub fn collect_geometries(&mut self, envelope_crs_uri: Option<String>) -> GeometryStore {
@@ -1414,11 +1436,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            if let Some(id) = extract_xlink_href(&start, self.reader) {
+                            if let Some((file_url, id)) = extract_xlink_href(&start, self.reader, self.state.context.source_url()) {
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push((LocalId::from(id), false));
+                                    .push((file_url, LocalId::from(id), false));
                             } else {
                                 self.parse_surface_member()?;
                             }
@@ -1491,11 +1513,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            if let Some(id) = extract_xlink_href(&start, self.reader) {
+                            if let Some((file_url, id)) = extract_xlink_href(&start, self.reader, self.state.context.source_url()) {
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push((LocalId::from(id), false));
+                                    .push((file_url, LocalId::from(id), false));
                             } else {
                                 self.parse_surface_member()?;
                             }
@@ -1761,12 +1783,12 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"baseSurface") => {
-                            if let Some(id) = extract_xlink_href(&start, self.reader) {
-                                let local_id = LocalId::from(id.clone());
+                            if let Some((file_url, id)) = extract_xlink_href(&start, self.reader, self.state.context.source_url()) {
+                                let local_id = LocalId::from(id);
                                 self.state
                                     .geometry_collector
                                     .pending_hrefs
-                                    .push((local_id.clone(), flip));
+                                    .push((file_url, local_id.clone(), flip));
                                 surface_id = Some(local_id);
                             }
                         }
@@ -2085,12 +2107,21 @@ fn extract_gmlid(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Option<
     None
 }
 
-fn extract_xlink_href(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Option<String> {
+fn extract_xlink_href(
+    start: &BytesStart,
+    reader: &NsReader<impl BufRead>,
+    source_uri: &Url,
+) -> Option<(Option<Url>, String)> {
     for attr in start.attributes().flatten() {
         let (nsres, localname) = reader.resolve_attribute(attr.key);
         if nsres == Bound(XLINK_NS) && localname.as_ref() == b"href" {
             let href = String::from_utf8_lossy(attr.value.as_ref());
-            return Some(href.strip_prefix('#').unwrap_or(&href).to_string());
+            if let Some(fragment) = href.strip_prefix('#') {
+                return Some((None, fragment.to_string()));
+            } else if let Some(pos) = href.find('#') {
+                let file_url = source_uri.join(&href[..pos]).ok()?;
+                return Some((Some(file_url), href[pos + 1..].to_string()));
+            }
         }
     }
     None
