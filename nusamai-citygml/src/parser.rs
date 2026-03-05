@@ -229,6 +229,15 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     .and_then(|(file_url, id)| file_url.map(|u| (u, id)));
 
                     if let Some((file_url, id)) = cross_file_href {
+                        // must not have both gml:id and cross-file xlink:href or feature_stack will be corrupted
+                        if self.state.feature_stack.last().map(|(_, _, d)| *d)
+                            == Some(current_depth)
+                        {
+                            return Err(ParseError::SchemaViolation(format!(
+                                "element '{}' has both gml:id and a cross-file xlink:href",
+                                String::from_utf8_lossy(&self.state.path_buf)
+                            )));
+                        }
                         self.state.pending_feature_hrefs.push((file_url, id));
                         self.skip_current_element()?;
                     } else {
@@ -2472,6 +2481,44 @@ mod tests {
                 let geometries = sr.collect_geometries(None);
                 assert_eq!(geometries.multilinestring.len(), 2);
             },
+        );
+    }
+
+    #[test]
+    fn cross_file_href_with_gmlid_returns_error() {
+        // An element that has BOTH gml:id AND a cross-file xlink:href is ambiguous:
+        // the gml:id push goes onto feature_stack, but skip_current_element() consumes
+        // the End event internally so the entry is never popped. The next sibling at
+        // the same depth then inherits the stale feature_id.
+        let doc = r#"<root xmlns:gml="http://www.opengis.net/gml"
+                           xmlns:xlink="http://www.w3.org/1999/xlink">
+            <child gml:id="BUILDING_001" xlink:href="other_file.gml#BUILDING_001"/>
+            <sibling/>
+        </root>"#;
+
+        let mut reader = quick_xml::NsReader::from_reader(std::io::Cursor::new(doc));
+        let mut citygml_reader = CityGmlReader::new(ParseContext::default());
+        let mut sr = citygml_reader
+            .start_root(&mut reader)
+            .expect("Failed to start root");
+
+        // Capture the feature_id that <sibling/> sees.
+        // A clean feature_stack gives None; corruption gives Some("BUILDING_001").
+        let mut sibling_fid: Option<String> = None;
+        let result = sr.parse_children(|child| {
+            sibling_fid = child.extract_feature_id_and_type().0;
+            Ok(())
+        });
+
+        // After the fix: an error is returned before <sibling/> is reached,
+        // so the closure is never called and sibling_fid stays None.
+        // Before the fix: Ok(()) is returned and sibling_fid = Some("BUILDING_001"),
+        // proving the feature_stack was corrupted.
+        assert!(
+            result.is_err(),
+            "parse succeeded but feature_stack was corrupted: \
+             <sibling/> inherited stale feature_id={sibling_fid:?} \
+             from the skipped cross-file href element"
         );
     }
 }

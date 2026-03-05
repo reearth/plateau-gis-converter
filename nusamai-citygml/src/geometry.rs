@@ -337,7 +337,7 @@ impl GeometryStore {
     }
 
     /// Resolve xlink:href references in GeometryRefs by looking up surface_spans.
-    /// After this call, unresolved refs are converted to resolved polygon ranges
+    /// After this call, same-file unresolved refs are converted to resolved polygon ranges
     pub fn resolve_refs(&self, geomrefs: &mut GeometryRefs) {
         // Build lookup: LocalId -> (start, end)
         let span_map: std::collections::HashMap<&LocalId, (u32, u32)> = self
