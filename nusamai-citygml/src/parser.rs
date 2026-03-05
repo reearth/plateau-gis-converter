@@ -2135,6 +2135,9 @@ fn extract_xlink_href(
                 return Some((None, fragment.to_string()));
             } else if let Some(pos) = href.find('#') {
                 let file_url = source_uri.join(&href[..pos]).ok()?;
+                if file_url == *source_uri {
+                    return Some((None, href[pos + 1..].to_string()));
+                }
                 return Some((Some(file_url), href[pos + 1..].to_string()));
             }
         }
@@ -2399,6 +2402,47 @@ mod tests {
                 assert_eq!(logic_calls.get(), 1); // only <b> reached logic
             },
         );
+    }
+
+    #[test]
+    fn self_file_href_does_not_deadlock_in_resolve_cross_file_refs() {
+        // Before fix: xlink:href="city.gml#poly1" with source "file:///city.gml" is
+        // parsed as a cross-file ref (Some(file_url)). The caller write-locks the
+        // GeometryStore and adds it to the registry; resolve_cross_file_refs then
+        // tries to read-lock the same Arc → deadlock.
+        // After fix: the parser normalises it to (None, ...) so it is resolved as a
+        // same-file ref and resolve_cross_file_refs never touches the registry entry.
+        use std::sync::{Arc, RwLock};
+
+        let source_url = Url::parse("file:///city.gml").unwrap();
+        let doc = r##"<root xmlns:gml="http://www.opengis.net/gml"
+                           xmlns:xlink="http://www.w3.org/1999/xlink">
+            <gml:MultiSurface>
+                <gml:surfaceMember xlink:href="city.gml#poly1"/>
+            </gml:MultiSurface>
+        </root>"##;
+        let mut reader = quick_xml::NsReader::from_reader(std::io::Cursor::new(doc));
+        let mut citygml_reader = CityGmlReader::new(ParseContext::new(
+            source_url.clone(),
+            &codelist::NoopResolver {},
+        ));
+        let mut sr = citygml_reader.start_root(&mut reader).unwrap();
+        let mut geomrefs: GeometryRefs = Vec::new();
+        sr.parse_geometric_attr(&mut geomrefs, 2, GeometryParseType::MultiSurface)
+            .unwrap();
+        let store = Arc::new(RwLock::new(sr.collect_geometries(None)));
+
+        // Simulate how the caller registers the store in the geometry registry.
+        let mut poly_url = source_url.clone();
+        poly_url.set_fragment(Some("poly1"));
+        let mut registry = std::collections::HashMap::new();
+        registry.insert(poly_url, Arc::clone(&store));
+
+        // Caller write-locks the store before calling resolve_cross_file_refs.
+        let mut guard = store.write().unwrap();
+        // Before fix: deadlocks here. After fix: returns immediately (ref resolved
+        // as same-file by the parser, no cross-file entry to process).
+        guard.resolve_cross_file_refs(&mut geomrefs, &registry);
     }
 
     #[test]
