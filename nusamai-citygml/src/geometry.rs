@@ -385,8 +385,7 @@ impl GeometryStore {
             let cross_refs: Vec<_> = geomref.unresolved_refs.drain(..).collect();
             let mut remaining = Vec::new();
             // Per-source cache: ring-count prefix sum + surface-span index.
-            let mut src_cache: HashMap<Url, (Vec<usize>, HashMap<LocalId, (u32, u32)>)> =
-                HashMap::new();
+            let mut src_cache: HashMap<Url, SrcFileCache> = HashMap::new();
 
             for (file_url_opt, href, flip) in cross_refs {
                 let Some(file_url) = file_url_opt else {
@@ -402,16 +401,17 @@ impl GeometryStore {
                 };
                 let src = src_lock.read().unwrap();
 
-                let (ring_prefix, span_index) = src_cache
-                    .entry(file_url)
-                    .or_insert_with(|| (src.ring_offset_prefix(), src.surface_span_index()));
+                let cache = src_cache.entry(file_url).or_insert_with(|| SrcFileCache {
+                    ring_prefix: src.ring_offset_prefix(),
+                    span_index: src.surface_span_index(),
+                });
 
-                let Some(&(span_start, span_end)) = span_index.get(&href) else {
+                let Some(&(span_start, span_end)) = cache.span_index.get(&href) else {
                     log::warn!("Polygon {:?} not found in source GeometryStore", href);
                     continue;
                 };
 
-                let src_ring_offset = ring_prefix[span_start as usize];
+                let src_ring_offset = cache.ring_prefix[span_start as usize];
 
                 let poly_begin = self.multipolygon.len() as u32;
                 let mut ring_count = 0usize;
@@ -477,6 +477,11 @@ pub struct SurfaceSpan {
     pub id: LocalId,
     pub start: u32,
     pub end: u32,
+}
+
+struct SrcFileCache {
+    ring_prefix: Vec<usize>,
+    span_index: HashMap<LocalId, (u32, u32)>,
 }
 
 /// Temporary storage for the parser to collect geometries.
