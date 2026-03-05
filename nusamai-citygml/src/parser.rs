@@ -2377,6 +2377,31 @@ mod tests {
     }
 
     #[test]
+    fn cross_file_feature_href_collected_same_file_not() {
+        use std::cell::Cell;
+        let logic_calls = Cell::new(0u32);
+        parse(
+            r##"<root xmlns:xlink="http://www.w3.org/1999/xlink">
+                <a xlink:href="other.gml#cross"/>
+                <b xlink:href="#local"/>
+            </root>"##,
+            |sr| {
+                sr.parse_children(|_| {
+                    logic_calls.set(logic_calls.get() + 1);
+                    Ok(())
+                })
+                .expect("parse_children failed");
+                let hrefs = sr.collect_feature_hrefs();
+                // cross-file ref is collected; same-file ref is left to logic
+                assert_eq!(hrefs.len(), 1);
+                assert_eq!(hrefs[0].0.as_str(), "file:///other.gml");
+                assert_eq!(hrefs[0].1, "cross");
+                assert_eq!(logic_calls.get(), 1); // only <b> reached logic
+            },
+        );
+    }
+
+    #[test]
     fn parse_curve_members_with_curves() {
         parse(
             r#"

@@ -317,6 +317,17 @@ pub struct GeometryStore {
 }
 
 impl GeometryStore {
+    /// Returns a prefix-sum of ring counts over `multipolygon`.
+    /// `result[i]` is the flat index into `ring_ids` for the first ring of polygon `i`.
+    pub fn ring_offset_prefix(&self) -> Vec<usize> {
+        let n = self.multipolygon.len();
+        let mut p = vec![0usize; n + 1];
+        for (i, poly) in self.multipolygon.iter_range(0..n).enumerate() {
+            p[i + 1] = p[i] + poly.rings().count();
+        }
+        p
+    }
+
     /// Resolve xlink:href references in GeometryRefs by looking up surface_spans.
     /// After this call, unresolved refs are converted to resolved polygon ranges
     pub fn resolve_refs(&self, geomrefs: &mut GeometryRefs) {
@@ -365,13 +376,14 @@ impl GeometryStore {
             }
             let cross_refs: Vec<_> = geomref.unresolved_refs.drain(..).collect();
             let mut remaining = Vec::new();
+            let mut ring_prefix_cache: HashMap<Url, Vec<usize>> = HashMap::new();
 
             for (file_url_opt, href, flip) in cross_refs {
                 let Some(file_url) = file_url_opt else {
                     remaining.push((None, href, flip));
                     continue;
                 };
-                let mut poly_url = file_url;
+                let mut poly_url = file_url.clone();
                 poly_url.set_fragment(Some(&href.0));
 
                 let Some(src_lock) = registry.get(&poly_url) else {
@@ -385,12 +397,10 @@ impl GeometryStore {
                     continue;
                 };
 
-                // Pre-compute ring offset in source for polygons before the borrowed span
-                let src_ring_offset: usize = src
-                    .multipolygon
-                    .iter_range(0..span.start as usize)
-                    .map(|p| p.rings().count())
-                    .sum();
+                let ring_prefix = ring_prefix_cache
+                    .entry(file_url)
+                    .or_insert_with(|| src.ring_offset_prefix());
+                let src_ring_offset = ring_prefix[span.start as usize];
 
                 let poly_begin = self.multipolygon.len() as u32;
                 let mut ring_count = 0usize;
