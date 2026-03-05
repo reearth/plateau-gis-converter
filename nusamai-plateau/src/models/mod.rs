@@ -892,4 +892,26 @@ impl TopLevelCityObject {
             _ => vec![],
         }
     }
+
+    pub fn into_entity<R: std::io::BufRead>(
+        self,
+        st: &mut nusamai_citygml::SubTreeReader<R>,
+        base_url: url::Url,
+        envelope_crs_uri: Option<String>,
+    ) -> Option<crate::Entity> {
+        let geometry_store = st.collect_geometries(envelope_crs_uri);
+        let cross_file_feature_refs = st.collect_feature_hrefs();
+        let id = self.id();
+        let typename = self.name();
+        let root = self.into_object()?;
+        Some(crate::Entity {
+            id: Some(id),
+            typename: Some(typename),
+            root,
+            base_url,
+            geometry_store: std::sync::RwLock::new(geometry_store).into(),
+            appearance_store: Default::default(),
+            cross_file_feature_refs,
+        })
+    }
 }
