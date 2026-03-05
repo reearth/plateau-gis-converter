@@ -328,6 +328,14 @@ impl GeometryStore {
         p
     }
 
+    /// Returns a map from surface id to `(start, end)` polygon span indices.
+    pub fn surface_span_index(&self) -> HashMap<LocalId, (u32, u32)> {
+        self.surface_spans
+            .iter()
+            .map(|s| (s.id.clone(), (s.start, s.end)))
+            .collect()
+    }
+
     /// Resolve xlink:href references in GeometryRefs by looking up surface_spans.
     /// After this call, unresolved refs are converted to resolved polygon ranges
     pub fn resolve_refs(&self, geomrefs: &mut GeometryRefs) {
@@ -376,7 +384,9 @@ impl GeometryStore {
             }
             let cross_refs: Vec<_> = geomref.unresolved_refs.drain(..).collect();
             let mut remaining = Vec::new();
-            let mut ring_prefix_cache: HashMap<Url, Vec<usize>> = HashMap::new();
+            // Per-source cache: ring-count prefix sum + surface-span index.
+            let mut src_cache: HashMap<Url, (Vec<usize>, HashMap<LocalId, (u32, u32)>)> =
+                HashMap::new();
 
             for (file_url_opt, href, flip) in cross_refs {
                 let Some(file_url) = file_url_opt else {
@@ -392,22 +402,23 @@ impl GeometryStore {
                 };
                 let src = src_lock.read().unwrap();
 
-                let Some(span) = src.surface_spans.iter().find(|s| s.id == href) else {
+                let (ring_prefix, span_index) = src_cache
+                    .entry(file_url)
+                    .or_insert_with(|| (src.ring_offset_prefix(), src.surface_span_index()));
+
+                let Some(&(span_start, span_end)) = span_index.get(&href) else {
                     log::warn!("Polygon {:?} not found in source GeometryStore", href);
                     continue;
                 };
 
-                let ring_prefix = ring_prefix_cache
-                    .entry(file_url)
-                    .or_insert_with(|| src.ring_offset_prefix());
-                let src_ring_offset = ring_prefix[span.start as usize];
+                let src_ring_offset = ring_prefix[span_start as usize];
 
                 let poly_begin = self.multipolygon.len() as u32;
                 let mut ring_count = 0usize;
 
                 for src_poly in src
                     .multipolygon
-                    .iter_range(span.start as usize..span.end as usize)
+                    .iter_range(span_start as usize..span_end as usize)
                 {
                     let coord_poly = src_poly.transform(|c| src.vertices[*c as usize]);
                     for (ring_i, ring) in coord_poly.rings().enumerate() {
@@ -439,12 +450,12 @@ impl GeometryStore {
                 for src_span in src
                     .surface_spans
                     .iter()
-                    .filter(|s| s.start >= span.start && s.end <= span.end)
+                    .filter(|s| s.start >= span_start && s.end <= span_end)
                 {
-                    // dst = src_span.{start,end} - span.start + poly_begin
+                    // dst = src_span.{start,end} - span_start + poly_begin
                     // Compute in two steps (both non-negative) to avoid u32 underflow.
-                    let rel_start = src_span.start - span.start;
-                    let rel_end = src_span.end - span.start;
+                    let rel_start = src_span.start - span_start;
+                    let rel_end = src_span.end - span_start;
                     self.surface_spans.push(SurfaceSpan {
                         id: src_span.id.clone(),
                         start: poly_begin + rel_start,
