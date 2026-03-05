@@ -401,11 +401,14 @@ impl GeometryStore {
                 {
                     let coord_poly = src_poly.transform(|c| src.vertices[*c as usize]);
                     for (ring_i, ring) in coord_poly.rings().enumerate() {
-                        let new_indices: Vec<u32> = ring.iter().map(|coord| {
-                            let idx = self.vertices.len() as u32;
-                            self.vertices.push(coord);
-                            idx
-                        }).collect();
+                        let new_indices: Vec<u32> = ring
+                            .iter()
+                            .map(|coord| {
+                                let idx = self.vertices.len() as u32;
+                                self.vertices.push(coord);
+                                idx
+                            })
+                            .collect();
                         if ring_i == 0 {
                             self.multipolygon.add_exterior(new_indices);
                         } else {

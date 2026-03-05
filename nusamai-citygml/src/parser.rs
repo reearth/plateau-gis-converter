@@ -1436,11 +1436,16 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            if let Some((file_url, id)) = extract_xlink_href(&start, self.reader, self.state.context.source_url()) {
-                                self.state
-                                    .geometry_collector
-                                    .pending_hrefs
-                                    .push((file_url, LocalId::from(id), false));
+                            if let Some((file_url, id)) = extract_xlink_href(
+                                &start,
+                                self.reader,
+                                self.state.context.source_url(),
+                            ) {
+                                self.state.geometry_collector.pending_hrefs.push((
+                                    file_url,
+                                    LocalId::from(id),
+                                    false,
+                                ));
                             } else {
                                 self.parse_surface_member()?;
                             }
@@ -1513,11 +1518,16 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            if let Some((file_url, id)) = extract_xlink_href(&start, self.reader, self.state.context.source_url()) {
-                                self.state
-                                    .geometry_collector
-                                    .pending_hrefs
-                                    .push((file_url, LocalId::from(id), false));
+                            if let Some((file_url, id)) = extract_xlink_href(
+                                &start,
+                                self.reader,
+                                self.state.context.source_url(),
+                            ) {
+                                self.state.geometry_collector.pending_hrefs.push((
+                                    file_url,
+                                    LocalId::from(id),
+                                    false,
+                                ));
                             } else {
                                 self.parse_surface_member()?;
                             }
@@ -1783,12 +1793,17 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"baseSurface") => {
-                            if let Some((file_url, id)) = extract_xlink_href(&start, self.reader, self.state.context.source_url()) {
+                            if let Some((file_url, id)) = extract_xlink_href(
+                                &start,
+                                self.reader,
+                                self.state.context.source_url(),
+                            ) {
                                 let local_id = LocalId::from(id);
-                                self.state
-                                    .geometry_collector
-                                    .pending_hrefs
-                                    .push((file_url, local_id.clone(), flip));
+                                self.state.geometry_collector.pending_hrefs.push((
+                                    file_url,
+                                    local_id.clone(),
+                                    flip,
+                                ));
                                 surface_id = Some(local_id);
                             }
                         }
