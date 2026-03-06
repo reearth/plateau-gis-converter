@@ -23,7 +23,7 @@ pub struct Entity {
     pub base_url: url::Url,
     /// All geometries referenced by the attribute tree
     #[serde(skip)]
-    pub geometry_stoe: Arc<RwLock<GeometryStore>>,
+    pub geometry_store: Arc<RwLock<GeometryStore>>,
     /// All appearances used in this city object
     #[serde(skip)]
     pub appearance_store: Arc<RwLock<AppearanceStore>>,
