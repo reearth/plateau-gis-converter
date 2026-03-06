@@ -22,8 +22,10 @@ pub struct Entity {
     /// Base url of the entity
     pub base_url: url::Url,
     /// All geometries referenced by the attribute tree
-    pub geometry_store: Arc<RwLock<GeometryStore>>,
+    #[serde(skip)]
+    pub geometry_stoe: Arc<RwLock<GeometryStore>>,
     /// All appearances used in this city object
+    #[serde(skip)]
     pub appearance_store: Arc<RwLock<AppearanceStore>>,
     /// Cross-file feature xlink:href refs (file_url, gml_id)
     pub cross_file_feature_refs: Vec<(url::Url, String)>,
