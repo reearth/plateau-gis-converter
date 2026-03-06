@@ -65,6 +65,10 @@ struct InternalState<'a> {
     /// Stack of feature IDs and types (elements with gml:id)
     /// Each entry is (feature_id, feature_type, path_depth)
     feature_stack: Vec<(String, String, usize)>,
+
+    /// Cross-file feature xlink:href refs collected during parsing
+    /// Each entry is (file_url, gml_id)
+    pub pending_feature_hrefs: Vec<(Url, String)>,
 }
 
 impl<'a> InternalState<'a> {
@@ -79,6 +83,7 @@ impl<'a> InternalState<'a> {
             geometry_collector: GeometryCollector::default(),
             context,
             feature_stack: Vec::new(),
+            pending_feature_hrefs: Vec::new(),
         }
     }
 }
@@ -215,7 +220,29 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         .current_start
                         .clone_from(&Some(start.into_owned()));
 
-                    logic(self)?;
+                    // Check for cross-file feature xlink:href (element is an empty ref)
+                    let cross_file_href = extract_xlink_href(
+                        self.state.current_start.as_ref().unwrap(),
+                        self.reader,
+                        self.state.context.source_url(),
+                    )
+                    .and_then(|(file_url, id)| file_url.map(|u| (u, id)));
+
+                    if let Some((file_url, id)) = cross_file_href {
+                        // must not have both gml:id and cross-file xlink:href or feature_stack will be corrupted
+                        if self.state.feature_stack.last().map(|(_, _, d)| *d)
+                            == Some(current_depth)
+                        {
+                            return Err(ParseError::SchemaViolation(format!(
+                                "element '{}' has both gml:id and a cross-file xlink:href",
+                                String::from_utf8_lossy(&self.state.path_buf)
+                            )));
+                        }
+                        self.state.pending_feature_hrefs.push((file_url, id));
+                        self.skip_current_element()?;
+                    } else {
+                        logic(self)?;
+                    }
                 }
                 Ok(Event::End(_)) => {
                     let popped_depth = self.state.path_stack_indices.len();
@@ -365,6 +392,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
 
     pub fn id_to_integer_id(&mut self, id: String) -> LocalId {
         LocalId::from(id)
+    }
+
+    pub fn collect_feature_hrefs(&mut self) -> Vec<(Url, String)> {
+        std::mem::take(&mut self.state.pending_feature_hrefs)
     }
 
     pub fn collect_geometries(&mut self, envelope_crs_uri: Option<String>) -> GeometryStore {
@@ -1414,11 +1445,16 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            if let Some(id) = extract_xlink_href(&start, self.reader) {
-                                self.state
-                                    .geometry_collector
-                                    .pending_hrefs
-                                    .push((LocalId::from(id), false));
+                            if let Some((file_url, id)) = extract_xlink_href(
+                                &start,
+                                self.reader,
+                                self.state.context.source_url(),
+                            ) {
+                                self.state.geometry_collector.pending_hrefs.push((
+                                    file_url,
+                                    LocalId::from(id),
+                                    false,
+                                ));
                             } else {
                                 self.parse_surface_member()?;
                             }
@@ -1491,11 +1527,16 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"surfaceMember") => {
-                            if let Some(id) = extract_xlink_href(&start, self.reader) {
-                                self.state
-                                    .geometry_collector
-                                    .pending_hrefs
-                                    .push((LocalId::from(id), false));
+                            if let Some((file_url, id)) = extract_xlink_href(
+                                &start,
+                                self.reader,
+                                self.state.context.source_url(),
+                            ) {
+                                self.state.geometry_collector.pending_hrefs.push((
+                                    file_url,
+                                    LocalId::from(id),
+                                    false,
+                                ));
                             } else {
                                 self.parse_surface_member()?;
                             }
@@ -1761,12 +1802,17 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"baseSurface") => {
-                            if let Some(id) = extract_xlink_href(&start, self.reader) {
-                                let local_id = LocalId::from(id.clone());
-                                self.state
-                                    .geometry_collector
-                                    .pending_hrefs
-                                    .push((local_id.clone(), flip));
+                            if let Some((file_url, id)) = extract_xlink_href(
+                                &start,
+                                self.reader,
+                                self.state.context.source_url(),
+                            ) {
+                                let local_id = LocalId::from(id);
+                                self.state.geometry_collector.pending_hrefs.push((
+                                    file_url,
+                                    local_id.clone(),
+                                    flip,
+                                ));
                                 surface_id = Some(local_id);
                             }
                         }
@@ -2085,12 +2131,24 @@ fn extract_gmlid(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Option<
     None
 }
 
-fn extract_xlink_href(start: &BytesStart, reader: &NsReader<impl BufRead>) -> Option<String> {
+fn extract_xlink_href(
+    start: &BytesStart,
+    reader: &NsReader<impl BufRead>,
+    source_uri: &Url,
+) -> Option<(Option<Url>, String)> {
     for attr in start.attributes().flatten() {
         let (nsres, localname) = reader.resolve_attribute(attr.key);
         if nsres == Bound(XLINK_NS) && localname.as_ref() == b"href" {
             let href = String::from_utf8_lossy(attr.value.as_ref());
-            return Some(href.strip_prefix('#').unwrap_or(&href).to_string());
+            if let Some(fragment) = href.strip_prefix('#') {
+                return Some((None, fragment.to_string()));
+            } else if let Some(pos) = href.find('#') {
+                let file_url = source_uri.join(&href[..pos]).ok()?;
+                if file_url == *source_uri {
+                    return Some((None, href[pos + 1..].to_string()));
+                }
+                return Some((Some(file_url), href[pos + 1..].to_string()));
+            }
         }
     }
     None
@@ -2331,6 +2389,72 @@ mod tests {
     }
 
     #[test]
+    fn cross_file_feature_href_collected_same_file_not() {
+        use std::cell::Cell;
+        let logic_calls = Cell::new(0u32);
+        parse(
+            r##"<root xmlns:xlink="http://www.w3.org/1999/xlink">
+                <a xlink:href="other.gml#cross"/>
+                <b xlink:href="#local"/>
+            </root>"##,
+            |sr| {
+                sr.parse_children(|_| {
+                    logic_calls.set(logic_calls.get() + 1);
+                    Ok(())
+                })
+                .expect("parse_children failed");
+                let hrefs = sr.collect_feature_hrefs();
+                // cross-file ref is collected; same-file ref is left to logic
+                assert_eq!(hrefs.len(), 1);
+                assert_eq!(hrefs[0].0.as_str(), "file:///other.gml");
+                assert_eq!(hrefs[0].1, "cross");
+                assert_eq!(logic_calls.get(), 1); // only <b> reached logic
+            },
+        );
+    }
+
+    #[test]
+    fn self_file_href_does_not_deadlock_in_resolve_cross_file_refs() {
+        // Before fix: xlink:href="city.gml#poly1" with source "file:///city.gml" is
+        // parsed as a cross-file ref (Some(file_url)). The caller write-locks the
+        // GeometryStore and adds it to the registry; resolve_cross_file_refs then
+        // tries to read-lock the same Arc → deadlock.
+        // After fix: the parser normalises it to (None, ...) so it is resolved as a
+        // same-file ref and resolve_cross_file_refs never touches the registry entry.
+        use std::sync::{Arc, RwLock};
+
+        let source_url = Url::parse("file:///city.gml").unwrap();
+        let doc = r##"<root xmlns:gml="http://www.opengis.net/gml"
+                           xmlns:xlink="http://www.w3.org/1999/xlink">
+            <gml:MultiSurface>
+                <gml:surfaceMember xlink:href="city.gml#poly1"/>
+            </gml:MultiSurface>
+        </root>"##;
+        let mut reader = quick_xml::NsReader::from_reader(std::io::Cursor::new(doc));
+        let mut citygml_reader = CityGmlReader::new(ParseContext::new(
+            source_url.clone(),
+            &codelist::NoopResolver {},
+        ));
+        let mut sr = citygml_reader.start_root(&mut reader).unwrap();
+        let mut geomrefs: GeometryRefs = Vec::new();
+        sr.parse_geometric_attr(&mut geomrefs, 2, GeometryParseType::MultiSurface)
+            .unwrap();
+        let store = Arc::new(RwLock::new(sr.collect_geometries(None)));
+
+        // Simulate how the caller registers the store in the geometry registry.
+        let mut poly_url = source_url.clone();
+        poly_url.set_fragment(Some("poly1"));
+        let mut registry = std::collections::HashMap::new();
+        registry.insert(poly_url, Arc::clone(&store));
+
+        // Caller write-locks the store before calling resolve_cross_file_refs.
+        let mut guard = store.write().unwrap();
+        // Before fix: deadlocks here. After fix: returns immediately (ref resolved
+        // as same-file by the parser, no cross-file entry to process).
+        guard.resolve_cross_file_refs(&mut geomrefs, &registry);
+    }
+
+    #[test]
     fn parse_curve_members_with_curves() {
         parse(
             r#"
@@ -2357,6 +2481,44 @@ mod tests {
                 let geometries = sr.collect_geometries(None);
                 assert_eq!(geometries.multilinestring.len(), 2);
             },
+        );
+    }
+
+    #[test]
+    fn cross_file_href_with_gmlid_returns_error() {
+        // An element that has BOTH gml:id AND a cross-file xlink:href is ambiguous:
+        // the gml:id push goes onto feature_stack, but skip_current_element() consumes
+        // the End event internally so the entry is never popped. The next sibling at
+        // the same depth then inherits the stale feature_id.
+        let doc = r#"<root xmlns:gml="http://www.opengis.net/gml"
+                           xmlns:xlink="http://www.w3.org/1999/xlink">
+            <child gml:id="BUILDING_001" xlink:href="other_file.gml#BUILDING_001"/>
+            <sibling/>
+        </root>"#;
+
+        let mut reader = quick_xml::NsReader::from_reader(std::io::Cursor::new(doc));
+        let mut citygml_reader = CityGmlReader::new(ParseContext::default());
+        let mut sr = citygml_reader
+            .start_root(&mut reader)
+            .expect("Failed to start root");
+
+        // Capture the feature_id that <sibling/> sees.
+        // A clean feature_stack gives None; corruption gives Some("BUILDING_001").
+        let mut sibling_fid: Option<String> = None;
+        let result = sr.parse_children(|child| {
+            sibling_fid = child.extract_feature_id_and_type().0;
+            Ok(())
+        });
+
+        // After the fix: an error is returned before <sibling/> is reached,
+        // so the closure is never called and sibling_fid stays None.
+        // Before the fix: Ok(()) is returned and sibling_fid = Some("BUILDING_001"),
+        // proving the feature_stack was corrupted.
+        assert!(
+            result.is_err(),
+            "parse succeeded but feature_stack was corrupted: \
+             <sibling/> inherited stale feature_id={sibling_fid:?} \
+             from the skipped cross-file href element"
         );
     }
 }

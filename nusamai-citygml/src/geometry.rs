@@ -1,7 +1,10 @@
+use std::collections::HashMap;
 use std::fmt::Display;
+use std::sync::{Arc, RwLock};
 
 use flatgeom::{MultiLineString, MultiPoint, MultiPolygon};
 use nusamai_projection::crs::*;
+use url::Url;
 
 use crate::LocalId;
 
@@ -270,9 +273,10 @@ pub struct GeometryRef {
     pub len: u32,
     pub feature_id: Option<String>,
     pub feature_type: Option<String>,
-    /// Unresolved xlink:href references (polygon ID, flip winding) to look up in surface_spans
+    /// Unresolved xlink:href references (optional cross-file URL, polygon ID, flip winding)
+    /// None file URL = same-file reference; Some = cross-file reference
     #[serde(default)]
-    pub unresolved_refs: Vec<(LocalId, bool)>,
+    pub unresolved_refs: Vec<(Option<Url>, LocalId, bool)>,
     /// Resolved polygon ranges from xlink:href references (start, end, flip winding)
     #[serde(default)]
     pub resolved_ranges: Vec<(u32, u32, bool)>,
@@ -313,8 +317,27 @@ pub struct GeometryStore {
 }
 
 impl GeometryStore {
+    /// Returns a prefix-sum of ring counts over `multipolygon`.
+    /// `result[i]` is the flat index into `ring_ids` for the first ring of polygon `i`.
+    pub fn ring_offset_prefix(&self) -> Vec<usize> {
+        let n = self.multipolygon.len();
+        let mut p = vec![0usize; n + 1];
+        for (i, poly) in self.multipolygon.iter_range(0..n).enumerate() {
+            p[i + 1] = p[i] + poly.rings().count();
+        }
+        p
+    }
+
+    /// Returns a map from surface id to `(start, end)` polygon span indices.
+    pub fn surface_span_index(&self) -> HashMap<LocalId, (u32, u32)> {
+        self.surface_spans
+            .iter()
+            .map(|s| (s.id.clone(), (s.start, s.end)))
+            .collect()
+    }
+
     /// Resolve xlink:href references in GeometryRefs by looking up surface_spans.
-    /// After this call, unresolved refs are converted to resolved polygon ranges
+    /// After this call, same-file unresolved refs are converted to resolved polygon ranges
     pub fn resolve_refs(&self, geomrefs: &mut GeometryRefs) {
         // Build lookup: LocalId -> (start, end)
         let span_map: std::collections::HashMap<&LocalId, (u32, u32)> = self
@@ -328,9 +351,13 @@ impl GeometryStore {
                 continue;
             }
             let mut ranges = Vec::new();
-            for (href, flip) in &geomref.unresolved_refs {
-                if let Some(&(start, end)) = span_map.get(href) {
-                    ranges.push((start, end, *flip));
+            let mut remaining = Vec::new();
+            for (file_url, href, flip) in geomref.unresolved_refs.drain(..) {
+                if file_url.is_some() {
+                    // Cross-file ref: leave for caller to resolve via resolve_cross_file_refs
+                    remaining.push((file_url, href, flip));
+                } else if let Some(&(start, end)) = span_map.get(&href) {
+                    ranges.push((start, end, flip));
                 } else {
                     log::warn!(
                         "Warning: GeometryRef has unresolved xlink:href reference to id '{:?}', skipping",
@@ -338,8 +365,108 @@ impl GeometryStore {
                     );
                 }
             }
-            geomref.resolved_ranges = ranges;
-            geomref.unresolved_refs.clear();
+            geomref.resolved_ranges.extend(ranges);
+            geomref.unresolved_refs = remaining;
+        }
+    }
+
+    /// Resolve cross-file xlink:href geometry references using a pre-built registry.
+    /// The registry maps polygon URL (`{file_url}#{polygon_id}`) to the owning GeometryStore.
+    /// Copies polygon geometry, ring_ids, and surface_spans from source stores.
+    pub fn resolve_cross_file_refs(
+        &mut self,
+        geomrefs: &mut GeometryRefs,
+        registry: &HashMap<Url, Arc<RwLock<Self>>>,
+    ) {
+        for geomref in geomrefs.iter_mut() {
+            if geomref.unresolved_refs.iter().all(|(f, _, _)| f.is_none()) {
+                continue;
+            }
+            let cross_refs: Vec<_> = geomref.unresolved_refs.drain(..).collect();
+            let mut remaining = Vec::new();
+            // Per-source cache: ring-count prefix sum + surface-span index.
+            let mut src_cache: HashMap<Url, SrcFileCache> = HashMap::new();
+
+            for (file_url_opt, href, flip) in cross_refs {
+                let Some(file_url) = file_url_opt else {
+                    remaining.push((None, href, flip));
+                    continue;
+                };
+                let mut poly_url = file_url.clone();
+                poly_url.set_fragment(Some(&href.0));
+
+                let Some(src_lock) = registry.get(&poly_url) else {
+                    log::warn!("Cross-file ref not in registry: {poly_url}");
+                    continue;
+                };
+                let src = src_lock.read().unwrap();
+
+                let cache = src_cache.entry(file_url).or_insert_with(|| SrcFileCache {
+                    ring_prefix: src.ring_offset_prefix(),
+                    span_index: src.surface_span_index(),
+                });
+
+                let Some(&(span_start, span_end)) = cache.span_index.get(&href) else {
+                    log::warn!("Polygon {:?} not found in source GeometryStore", href);
+                    continue;
+                };
+
+                let src_ring_offset = cache.ring_prefix[span_start as usize];
+
+                let poly_begin = self.multipolygon.len() as u32;
+                let mut ring_count = 0usize;
+
+                for src_poly in src
+                    .multipolygon
+                    .iter_range(span_start as usize..span_end as usize)
+                {
+                    let coord_poly = src_poly.transform(|c| src.vertices[*c as usize]);
+                    for (ring_i, ring) in coord_poly.rings().enumerate() {
+                        let new_indices: Vec<u32> = ring
+                            .iter()
+                            .map(|coord| {
+                                let idx = self.vertices.len() as u32;
+                                self.vertices.push(coord);
+                                idx
+                            })
+                            .collect();
+                        if ring_i == 0 {
+                            self.multipolygon.add_exterior(new_indices);
+                        } else {
+                            self.multipolygon.add_interior(new_indices);
+                        }
+                        self.ring_ids.push(
+                            src.ring_ids
+                                .get(src_ring_offset + ring_count)
+                                .cloned()
+                                .flatten(),
+                        );
+                        ring_count += 1;
+                    }
+                }
+
+                let poly_end = self.multipolygon.len() as u32;
+
+                for src_span in src
+                    .surface_spans
+                    .iter()
+                    .filter(|s| s.start >= span_start && s.end <= span_end)
+                {
+                    // dst = src_span.{start,end} - span_start + poly_begin
+                    // Compute in two steps (both non-negative) to avoid u32 underflow.
+                    let rel_start = src_span.start - span_start;
+                    let rel_end = src_span.end - span_start;
+                    self.surface_spans.push(SurfaceSpan {
+                        id: src_span.id.clone(),
+                        start: poly_begin + rel_start,
+                        end: poly_begin + rel_end,
+                    });
+                }
+
+                geomref.resolved_ranges.push((poly_begin, poly_end, flip));
+            }
+
+            geomref.unresolved_refs = remaining;
         }
     }
 }
@@ -350,6 +477,11 @@ pub struct SurfaceSpan {
     pub id: LocalId,
     pub start: u32,
     pub end: u32,
+}
+
+struct SrcFileCache {
+    ring_prefix: Vec<usize>,
+    span_index: HashMap<LocalId, (u32, u32)>,
 }
 
 /// Temporary storage for the parser to collect geometries.
@@ -367,8 +499,8 @@ pub(crate) struct GeometryCollector {
     /// surface polygon spans in `multipolygon`
     pub surface_spans: Vec<SurfaceSpan>,
 
-    /// xlink:href IDs collected during geometry parsing (stripped of '#' prefix, flip winding)
-    pub(crate) pending_hrefs: Vec<(LocalId, bool)>,
+    /// xlink:href references collected during geometry parsing (optional cross-file URL, fragment ID, flip winding)
+    pub(crate) pending_hrefs: Vec<(Option<Url>, LocalId, bool)>,
 }
 
 impl GeometryCollector {

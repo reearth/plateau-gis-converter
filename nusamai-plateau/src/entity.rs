@@ -22,9 +22,13 @@ pub struct Entity {
     /// Base url of the entity
     pub base_url: url::Url,
     /// All geometries referenced by the attribute tree
+    #[serde(skip)]
     pub geometry_store: Arc<RwLock<GeometryStore>>,
     /// All appearances used in this city object
+    #[serde(skip)]
     pub appearance_store: Arc<RwLock<AppearanceStore>>,
+    /// Cross-file feature xlink:href refs (file_url, gml_id)
+    pub cross_file_feature_refs: Vec<(url::Url, String)>,
 }
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 pub struct BoundedBy {
@@ -170,6 +174,7 @@ impl FlattenTreeTransform {
                         base_url: url::Url::parse("file:///dummy").expect("should be valid"),
                         geometry_store: geom_store.clone(),
                         appearance_store: appearance_store.clone(),
+                        cross_file_feature_refs: vec![],
                     });
 
                     if let Some(typename_value) = typename.as_deref() {
