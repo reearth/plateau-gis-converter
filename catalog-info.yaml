@@ -1,0 +1,22 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: plateau-gis-converter
+  namespace: reearth
+  description: A GUI and CLI tool for converting PLATEAU's 3D city models (CityGML)
+    of Japan into various geospatial formats, including 3D Tiles, MVT, and GeoPackage.
+  annotations:
+    github.com/project-slug: reearth/plateau-gis-converter
+  links:
+  - url: https://github.com/reearth/plateau-gis-converter
+    title: GitHub
+    icon: github
+  - url: https://mierune.github.io/plateau-gis-converter/
+    title: Website
+    icon: web
+  tags:
+  - rust
+spec:
+  type: service
+  lifecycle: experimental
+  owner: reearth/flow
