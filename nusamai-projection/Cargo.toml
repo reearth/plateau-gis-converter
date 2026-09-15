@@ -4,5 +4,6 @@ name = "nusamai-projection"
 version = "0.1.0"
 
 [dependencies]
-japan-geoid = "0.4.4"
+japan-geoid = { version = "0.6.0", features = ["gsigeo2011", "jpgeo2024_hrefconv2024"] }
 thiserror = "2.0.12"
+lz4_flex = { version = "0.12.0", default-features = false }
