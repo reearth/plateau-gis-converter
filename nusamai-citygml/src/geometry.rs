@@ -384,7 +384,7 @@ impl GeometryStore {
             if geomref.unresolved_refs.iter().all(|(f, _, _)| f.is_none()) {
                 continue;
             }
-            let cross_refs: Vec<_> = geomref.unresolved_refs.drain(..).collect();
+            let cross_refs = std::mem::take(&mut geomref.unresolved_refs);
             let mut remaining = Vec::new();
             // Per-source cache: ring-count prefix sum + surface-span index.
             let mut src_cache: HashMap<Url, SrcFileCache> = HashMap::new();

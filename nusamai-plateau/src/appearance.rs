@@ -91,10 +91,7 @@ impl AppearanceStore {
                     for tex_assoc in texture.target.drain(..) {
                         if let TextureAssociation::TexCoordList(tcl) = tex_assoc {
                             for (ring, coords) in tcl.rings.into_iter().zip(tcl.coords_list) {
-                                let coords = coords
-                                    .chunks_exact(2)
-                                    .map(|v| [v[0], v[1]])
-                                    .collect::<Vec<_>>();
+                                let coords = coords.as_chunks::<2>().0.to_vec();
                                 let ls = LineString2::from_raw(coords.into());
                                 theme.ring_id_to_texture.insert(ring, (tex_idx, ls));
                             }
