@@ -9,8 +9,11 @@
 //! obtained by bilinear interpolation over the four surrounding nodes, which is
 //! what the official PatchJGD software does.
 //!
-//! Version 1.0.0 of that file is embedded in a compact lossless binary form and
-//! available through [`HeightRevisionGrid::load_embedded`].
+//! GSI publishes two parameter sets: `hyokorevBM_jgd2024_h.par` for heights
+//! referenced to levelling benchmarks (水準点) and `hyokorevTR_jgd2024_h.par`
+//! for heights referenced to triangulation points (三角点). Version 1.0.0 of
+//! both is embedded in a compact lossless binary form; see
+//! [`HeightRevisionGrid::load_embedded`].
 
 use std::io::{self, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,6 +38,22 @@ const BINARY_MAGIC: &[u8; 4] = b"HREV";
 const BINARY_FORMAT_VERSION: u8 = 1;
 const BINARY_SCALE: f64 = 1e5;
 
+/// Which of GSI's two parameter sets to use.
+///
+/// GSI's own base map update applied the benchmark set and fell back to the
+/// triangulation set where the benchmark set has no coverage, which is why a
+/// consumer typically holds both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterSet {
+    /// `hyokorevBM_jgd2024_h.par`: built from the levelling network. Excludes
+    /// some islands and the parts of Miyazaki and Ishikawa disturbed by
+    /// earthquakes.
+    Benchmark,
+    /// `hyokorevTR_jgd2024_h.par`: built from the GNSS station ellipsoid
+    /// height changes and the geoid model change. Excludes some islands.
+    Triangulation,
+}
+
 /// Dense grid of height corrections with `NaN` marking nodes without data.
 #[derive(Debug, Clone)]
 pub struct HeightRevisionGrid {
@@ -47,10 +66,15 @@ pub struct HeightRevisionGrid {
 }
 
 impl HeightRevisionGrid {
-    /// The embedded nationwide parameter set.
-    pub fn load_embedded() -> Self {
-        const EMBEDDED: &[u8] = include_bytes!("hyokorevTR_jgd2024_h.bin.lz4");
-        let bytes = lz4_flex::decompress_size_prepended(EMBEDDED)
+    /// One of the embedded nationwide parameter sets.
+    pub fn load_embedded(set: ParameterSet) -> Self {
+        const BM: &[u8] = include_bytes!("hyokorevBM_jgd2024_h.bin.lz4");
+        const TR: &[u8] = include_bytes!("hyokorevTR_jgd2024_h.bin.lz4");
+        let embedded = match set {
+            ParameterSet::Benchmark => BM,
+            ParameterSet::Triangulation => TR,
+        };
+        let bytes = lz4_flex::decompress_size_prepended(embedded)
             .expect("embedded height revision grid is valid lz4");
         Self::from_binary_reader(&mut io::Cursor::new(bytes))
             .expect("embedded height revision grid is valid")
@@ -252,11 +276,11 @@ mod tests {
 
     #[test]
     fn embedded_grid() {
-        let grid = HeightRevisionGrid::load_embedded();
+        let grid = HeightRevisionGrid::load_embedded(ParameterSet::Triangulation);
         assert!(grid.version().contains("Ver.1.0.0"), "{}", grid.version());
         assert_eq!(grid.node_count(), 645_301);
         let v = grid.get(LNG, LAT).unwrap();
-        assert!((v - 0.1233).abs() < 5e-4, "got {v}");
+        assert!((v - 0.1236).abs() < 5e-4, "got {v}");
         // Exactly on the south-west node of the cell containing the station.
         let x = ((LNG - LON_ORIGIN_DEG) * LON_NODES_PER_DEG).floor();
         let y = (LAT * LAT_NODES_PER_DEG).floor();
@@ -270,6 +294,17 @@ mod tests {
         // Sea, well outside the coverage, and nonsense input.
         assert!(grid.get(135.0, 30.0).is_none());
         assert!(grid.get(f64::NAN, 30.0).is_none());
+    }
+
+    #[test]
+    fn embedded_benchmark_grid() {
+        let grid = HeightRevisionGrid::load_embedded(ParameterSet::Benchmark);
+        assert!(grid.version().contains("Ver.1.0.0"), "{}", grid.version());
+        assert_eq!(grid.node_count(), 643_467);
+        // The benchmark set differs from the triangulation set by 14 cm here.
+        let v = grid.get(LNG, LAT).unwrap();
+        assert!((v + 0.0205).abs() < 5e-4, "got {v}");
+        assert!(grid.get(135.0, 30.0).is_none());
     }
 
     #[test]
@@ -291,10 +326,12 @@ mod tests {
 
     #[test]
     fn transform_and_miss_flag() {
-        let t = Jgd2011ToJgd2024::new(Arc::new(HeightRevisionGrid::load_embedded()));
+        let t = Jgd2011ToJgd2024::new(Arc::new(HeightRevisionGrid::load_embedded(
+            ParameterSet::Triangulation,
+        )));
         let (lng, lat, h) = t.convert(LNG, LAT, 10.0);
         assert_eq!((lng, lat), (LNG, LAT));
-        assert!((h - 10.1233).abs() < 5e-4, "got {h}");
+        assert!((h - 10.1236).abs() < 5e-4, "got {h}");
         assert!(!t.take_missed());
         let (_, _, h) = t.convert(135.0, 30.0, 10.0);
         assert_eq!(h, 10.0);
