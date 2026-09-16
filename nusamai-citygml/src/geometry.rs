@@ -288,8 +288,10 @@ pub type GeometryRefs = Vec<GeometryRef>;
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug, Default)]
 pub struct GeometryStore {
-    /// EPSG code of the Coordinate Reference System (CRS) for this geometry
-    pub epsg: EpsgCode,
+    /// EPSG code of the Coordinate Reference System (CRS) for this geometry,
+    /// taken from the envelope's or the geometry's `srsName`. `None` when the
+    /// document has no `srsName` or it is not an EPSG URI.
+    pub epsg: Option<EpsgCode>,
 
     /// Shared vertex buffer for all geometries in this store
     pub vertices: Vec<[f64; 3]>,
@@ -555,18 +557,13 @@ impl GeometryCollector {
             ]);
         }
 
-        let crs_uri = envelope_crs_uri.unwrap_or(self.geometry_crs_uri.unwrap_or_default());
-
-        let epsg = if crs_uri.starts_with(CRS_URI_EPSG_PREFIX) {
-            if let Some(stripped) = crs_uri.strip_prefix(CRS_URI_EPSG_PREFIX) {
-                stripped.parse::<EpsgCode>().ok()
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-        .unwrap_or(EPSG_JGD2011_GEOGRAPHIC_3D);
+        // No fallback: a missing or unrecognised srsName leaves the code
+        // unset, so a consumer that depends on the datum can refuse the data
+        // instead of silently assuming one.
+        let epsg = envelope_crs_uri.or(self.geometry_crs_uri).and_then(|uri| {
+            uri.strip_prefix(CRS_URI_EPSG_PREFIX)
+                .and_then(|code| code.parse::<EpsgCode>().ok())
+        });
 
         GeometryStore {
             epsg,
