@@ -14,6 +14,14 @@
 //! for heights referenced to triangulation points (三角点). Version 1.0.0 of
 //! both is embedded in a compact lossless binary form; see
 //! [`HeightRevisionGrid::load_embedded`].
+//!
+//! Data source and attribution: the embedded grids are converted, without any
+//! change to the values, from the parameter files published by GSI at
+//! <https://www.gsi.go.jp/sokuchikijun/sokuchikijun41012.html> (公表日
+//! 令和7年4月1日). 出典：国土地理院ウェブサイト「座標標高補正パラメータファイル一覧」
+//! （測地成果2024移行のための水準点標高補正パラメータ及び三角点標高補正パラメータ、
+//! Ver.1.0.0）を加工して作成。Used under the 国土地理院コンテンツ利用規約
+//! (<https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html>).
 
 use std::io::{self, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
