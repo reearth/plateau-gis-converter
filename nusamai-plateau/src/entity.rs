@@ -177,17 +177,14 @@ impl FlattenTreeTransform {
                         cross_file_feature_refs: vec![],
                     });
 
-                    if let Some(typename_value) = typename.as_deref() {
-                        if typename_value == "uro:DmGeometricAttribute" {
-                            // DmGeometricAttribute should be kept with geometry removed
-                            // the kept DmGeometricAttribute should not have those parent* attributes
-                            obj.stereotype = ObjectStereotype::Data;
-                        } else if typename_value.starts_with("urf:") {
-                            // urf:* parents collect children geometries, but not attributes
-                            obj.attributes.clear();
-                        } else {
-                            return None;
-                        }
+                    let typename_value = typename.as_deref()?;
+                    if typename_value == "uro:DmGeometricAttribute" {
+                        // DmGeometricAttribute should be kept with geometry removed
+                        // the kept DmGeometricAttribute should not have those parent* attributes
+                        obj.stereotype = ObjectStereotype::Data;
+                    } else if typename_value.starts_with("urf:") {
+                        // urf:* parents collect children geometries, but not attributes
+                        obj.attributes.clear();
                     } else {
                         return None;
                     }

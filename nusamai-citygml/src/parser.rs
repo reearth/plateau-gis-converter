@@ -761,12 +761,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     };
 
                     let poly_end = self.state.geometry_collector.multipolygon.len();
-                    let hrefs: Vec<_> = self
-                        .state
-                        .geometry_collector
-                        .pending_hrefs
-                        .drain(..)
-                        .collect();
+                    let hrefs = std::mem::take(&mut self.state.geometry_collector.pending_hrefs);
                     if poly_end - poly_begin > 0 || !hrefs.is_empty() {
                         geomrefs.push(GeometryRef {
                             ty: geomtype,
@@ -853,12 +848,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
 
         let poly_end = self.state.geometry_collector.multipolygon.len();
-        let hrefs: Vec<_> = self
-            .state
-            .geometry_collector
-            .pending_hrefs
-            .drain(..)
-            .collect();
+        let hrefs = std::mem::take(&mut self.state.geometry_collector.pending_hrefs);
         if poly_end - poly_begin > 0 || !hrefs.is_empty() {
             geomrefs.push(GeometryRef {
                 ty: GeometryType::Solid,
@@ -1093,12 +1083,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             )))
                         }
                     };
-                    let hrefs: Vec<_> = self
-                        .state
-                        .geometry_collector
-                        .pending_hrefs
-                        .drain(..)
-                        .collect();
+                    let hrefs = std::mem::take(&mut self.state.geometry_collector.pending_hrefs);
                     if let Some(poly_end) = poly_end {
                         if poly_end - poly_begin > 0 || !hrefs.is_empty() {
                             geomrefs.push(GeometryRef {
@@ -1780,11 +1765,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         ));
                     }
 
-                    let iter = self
-                        .state
-                        .fp_buf
-                        .chunks_exact(3)
-                        .map(|c| [c[0], c[1], c[2]]);
+                    let iter = self.state.fp_buf.as_chunks::<3>().0.iter().copied();
 
                     self.state.geometry_collector.add_linestring(iter);
                 }
@@ -1924,11 +1905,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         ));
                     }
 
-                    let iter = self
-                        .state
-                        .fp_buf
-                        .chunks_exact(3)
-                        .map(|c| [c[0], c[1], c[2]]);
+                    let iter = self.state.fp_buf.as_chunks::<3>().0.iter().copied();
 
                     if is_exterior {
                         // add a new polygon

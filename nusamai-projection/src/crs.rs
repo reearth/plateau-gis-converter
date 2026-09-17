@@ -10,8 +10,14 @@ pub const EPSG_WEB_MERCATOR: EpsgCode = 3857;
 /// JGD2011
 pub const EPSG_JGD2011_GEOGRAPHIC_2D: EpsgCode = 6668;
 
-/// JGD2011 + JGD2011 (vertical) height
+/// JGD2011 + JGD2011 (vertical) height. Named "JGD2024 + JGD2011 (vertical)
+/// height" since EPSG Dataset v12.055, because the horizontal positions carry
+/// over into 測地成果2024 unchanged; the heights are still 測地成果2011.
 pub const EPSG_JGD2011_GEOGRAPHIC_3D: EpsgCode = 6697;
+
+/// JGD2024 + JGD2024 (vertical) height: the same horizontal positions with
+/// 測地成果2024 heights.
+pub const EPSG_JGD2024_GEOGRAPHIC_3D: EpsgCode = 11318;
 
 // JGD2011 / Japan Plane Rectangular CS + JGD2011 (vertical) height
 // Note: Only I - XIII are defined (XIV - XIX does not exist)

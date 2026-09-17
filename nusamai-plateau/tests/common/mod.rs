@@ -1,6 +1,8 @@
 use std::{io::BufRead, path::Path};
 
-use nusamai_citygml::{CityGmlElement, CityGmlReader, GeometryStore, ParseError, SubTreeReader};
+use nusamai_citygml::{
+    CityGmlElement, CityGmlReader, Envelope, GeometryStore, ParseError, SubTreeReader,
+};
 use nusamai_plateau::models::{appearance::AppearanceProperty, TopLevelCityObject};
 use url::Url;
 
@@ -13,6 +15,7 @@ fn toplevel_dispatcher<R: BufRead>(
     st: &mut SubTreeReader<R>,
 ) -> Result<Vec<CityObject>, ParseError> {
     let mut cityobjs = Vec::new();
+    let mut envelope = Envelope::default();
 
     match st.parse_children(|st| {
         let current_path: &[u8] = &st.current_path();
@@ -20,17 +23,20 @@ fn toplevel_dispatcher<R: BufRead>(
             b"core:cityObjectMember" => {
                 let mut cityobj: TopLevelCityObject = Default::default();
                 cityobj.parse(st)?;
-                let geometries = st.collect_geometries(None);
+                let geometries = st.collect_geometries(envelope.crs_uri.clone());
                 cityobjs.push(CityObject {
                     cityobj,
                     geometries,
                 });
                 Ok(())
             }
-            b"gml:boundedBy" => {
-                st.skip_current_element()?;
-                Ok(())
-            }
+            b"gml:boundedBy" => st.parse_children(|st| {
+                if st.current_path().ends_with(b"gml:Envelope") {
+                    envelope.parse(st)
+                } else {
+                    st.skip_current_element()
+                }
+            }),
             b"app:appearanceMember" => {
                 let mut app: AppearanceProperty = Default::default();
                 app.parse(st)?;

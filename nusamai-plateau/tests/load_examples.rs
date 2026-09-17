@@ -315,7 +315,7 @@ fn load_dem_example() {
     };
     assert_eq!(tin.lod, Some(1));
 
-    assert_eq!(cityobjs[0].geometries.epsg, 6697);
+    assert_eq!(cityobjs[0].geometries.epsg, Some(6697));
     assert_eq!(
         cityobjs
             .iter()
