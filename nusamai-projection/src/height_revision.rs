@@ -25,7 +25,7 @@
 
 use std::io::{self, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use crate::vshift::VerticalTransform;
 
@@ -232,45 +232,83 @@ fn snap_to_node(v: f64) -> f64 {
 /// Converts JGD2011 orthometric heights (測地成果2011) to JGD2024 orthometric
 /// heights (測地成果2024) by adding the GSI height revision correction.
 ///
-/// Positions outside the grid coverage are passed through unchanged and the
+/// The benchmark parameter set is applied where it has coverage and the
+/// triangulation set elsewhere, which is the rule GSI used to revise its own
+/// base map. Positions outside both sets are passed through unchanged and the
 /// miss flag is raised, so a caller can decide per feature whether to keep or
 /// discard the result. Longitude and latitude are never changed.
 #[derive(Debug)]
 pub struct Jgd2011ToJgd2024 {
-    grid: Arc<HeightRevisionGrid>,
+    benchmark: Arc<HeightRevisionGrid>,
+    triangulation: Arc<HeightRevisionGrid>,
     missed: AtomicBool,
+    used_fallback: AtomicBool,
 }
 
+static BENCHMARK: LazyLock<Arc<HeightRevisionGrid>> =
+    LazyLock::new(|| Arc::new(HeightRevisionGrid::load_embedded(ParameterSet::Benchmark)));
+static TRIANGULATION: LazyLock<Arc<HeightRevisionGrid>> = LazyLock::new(|| {
+    Arc::new(HeightRevisionGrid::load_embedded(
+        ParameterSet::Triangulation,
+    ))
+});
+
 impl Jgd2011ToJgd2024 {
-    pub fn new(grid: Arc<HeightRevisionGrid>) -> Self {
+    /// A transform over the embedded parameter sets. The grids are decoded
+    /// once per process and shared between instances.
+    pub fn new() -> Self {
+        Self::with_grids(Arc::clone(&BENCHMARK), Arc::clone(&TRIANGULATION))
+    }
+
+    /// A transform over explicit grids, tried in the given order.
+    pub fn with_grids(
+        benchmark: Arc<HeightRevisionGrid>,
+        triangulation: Arc<HeightRevisionGrid>,
+    ) -> Self {
         Self {
-            grid,
+            benchmark,
+            triangulation,
             missed: AtomicBool::new(false),
+            used_fallback: AtomicBool::new(false),
         }
     }
 
     /// Returns whether any conversion since the last call fell outside the
-    /// grid coverage, and clears the flag.
+    /// coverage of both parameter sets, and clears the flag.
     pub fn take_missed(&self) -> bool {
         self.missed.swap(false, Ordering::Relaxed)
+    }
+
+    /// Returns whether any conversion since the last call fell outside the
+    /// benchmark coverage and used the triangulation set, and clears the flag.
+    pub fn take_used_fallback(&self) -> bool {
+        self.used_fallback.swap(false, Ordering::Relaxed)
+    }
+}
+
+impl Default for Jgd2011ToJgd2024 {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl Clone for Jgd2011ToJgd2024 {
     fn clone(&self) -> Self {
-        Self::new(Arc::clone(&self.grid))
+        Self::with_grids(Arc::clone(&self.benchmark), Arc::clone(&self.triangulation))
     }
 }
 
 impl VerticalTransform for Jgd2011ToJgd2024 {
     fn convert(&self, lng: f64, lat: f64, height: f64) -> (f64, f64, f64) {
-        match self.grid.get(lng, lat) {
-            Some(dh) => (lng, lat, height + dh),
-            None => {
-                self.missed.store(true, Ordering::Relaxed);
-                (lng, lat, height)
-            }
+        if let Some(dh) = self.benchmark.get(lng, lat) {
+            return (lng, lat, height + dh);
         }
+        if let Some(dh) = self.triangulation.get(lng, lat) {
+            self.used_fallback.store(true, Ordering::Relaxed);
+            return (lng, lat, height + dh);
+        }
+        self.missed.store(true, Ordering::Relaxed);
+        (lng, lat, height)
     }
 }
 
@@ -333,17 +371,34 @@ mod tests {
     }
 
     #[test]
-    fn transform_and_miss_flag() {
-        let t = Jgd2011ToJgd2024::new(Arc::new(HeightRevisionGrid::load_embedded(
-            ParameterSet::Triangulation,
-        )));
+    fn transform_prefers_benchmarks_and_flags_misses() {
+        let t = Jgd2011ToJgd2024::new();
         let (lng, lat, h) = t.convert(LNG, LAT, 10.0);
         assert_eq!((lng, lat), (LNG, LAT));
-        assert!((h - 10.1236).abs() < 5e-4, "got {h}");
-        assert!(!t.take_missed());
+        // Benchmark correction here, not the +0.1236 m triangulation one.
+        assert!((h - 9.9795).abs() < 5e-4, "got {h}");
+        assert!(!t.take_used_fallback() && !t.take_missed());
         let (_, _, h) = t.convert(135.0, 30.0, 10.0);
         assert_eq!(h, 10.0);
         assert!(t.take_missed());
+        assert!(!t.take_missed());
+    }
+
+    #[test]
+    fn transform_falls_back_to_triangulation() {
+        // A benchmark grid with no data at all forces the fallback.
+        let empty = HeightRevisionGrid {
+            row0: 0,
+            col0: 0,
+            rows: 1,
+            cols: 1,
+            values: vec![f32::NAN],
+            version: String::new(),
+        };
+        let t = Jgd2011ToJgd2024::with_grids(Arc::new(empty), Arc::clone(&TRIANGULATION));
+        let (_, _, h) = t.convert(LNG, LAT, 10.0);
+        assert!((h - 10.1236).abs() < 5e-4, "got {h}");
+        assert!(t.take_used_fallback());
         assert!(!t.take_missed());
     }
 }
