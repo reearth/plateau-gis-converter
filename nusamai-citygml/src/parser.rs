@@ -1069,8 +1069,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             line_end = Some(self.state.geometry_collector.multilinestring.len());
                             GeometryType::Curve
                         }
-                        (Bound(GML31_NS), b"TriangulatedSurface") => unimplemented!(),
-                        (Bound(GML31_NS), b"Tin") => unimplemented!(),
+                        (Bound(GML31_NS), b"TriangulatedSurface" | b"Tin") => {
+                            self.parse_triangulated_surface()?;
+                            poly_end = Some(self.state.geometry_collector.multipolygon.len());
+                            GeometryType::Triangle
+                        }
                         (Bound(GML31_NS), b"Point") => {
                             self.parse_point()?;
                             point_end = Some(self.state.geometry_collector.multipoint.len());
@@ -1362,6 +1365,9 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         }
                         (Bound(GML31_NS), b"CompositeSurface") => {
                             self.parse_composite_surface()?;
+                        }
+                        (Bound(GML31_NS), b"TriangulatedSurface" | b"Tin") => {
+                            self.parse_triangulated_surface()?;
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1825,6 +1831,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
             match self.reader.read_resolved_event_into(&mut self.state.buf1) {
                 Ok((Bound(GML31_NS), Event::Start(start))) => {
                     depth += 1;
+                    let mut is_ring = false;
                     match (depth, start.local_name().as_ref()) {
                         (2, b"exterior") => {
                             if expect_exterior {
@@ -1852,9 +1859,13 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         (3, b"LinearRing") => {
                             ring_id = extract_gmlid(&start, self.reader);
                         }
+                        (3, b"Ring") => {
+                            ring_id = extract_gmlid(&start, self.reader);
+                            is_ring = true;
+                        }
                         (3, _) => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Expected <LinearRing> but found <{}>",
+                                "Expected <LinearRing> or <Ring> but found <{}>",
                                 String::from_utf8_lossy(start.name().as_ref())
                             )));
                         }
@@ -1870,6 +1881,20 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                                 "Coordinate sequence text is expected but found <{}>",
                                 String::from_utf8_lossy(start.name().as_ref())
                             )));
+                        }
+                    }
+                    if is_ring {
+                        // parse_ring() consumes </Ring>
+                        let ring = self.parse_ring()?;
+                        depth -= 1;
+                        if is_exterior {
+                            self.state
+                                .geometry_collector
+                                .add_exterior_ring(ring, ring_id.take());
+                        } else {
+                            self.state
+                                .geometry_collector
+                                .add_interior_ring(ring, ring_id.take());
                         }
                     }
                 }
@@ -1923,6 +1948,98 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 Err(e) => return Err(e.into()),
             }
         }
+    }
+
+    /// Parses the content of <gml:Ring> into a closed coordinate sequence
+    ///
+    /// The curve members (LineString, or Curve made of LineStringSegments) are
+    /// concatenated. Each member must start where the previous one ended; the
+    /// duplicated joint point is dropped.
+    fn parse_ring(&mut self) -> Result<Vec<[f64; 3]>, ParseError> {
+        let mut ring: Vec<[f64; 3]> = Vec::new();
+        let mut depth = 1;
+        let mut member_has_coords = false;
+        let mut in_curve = false;
+        loop {
+            match self.reader.read_resolved_event_into(&mut self.state.buf1) {
+                Ok((Bound(GML31_NS), Event::Start(start))) => {
+                    depth += 1;
+                    match (depth, start.local_name().as_ref()) {
+                        (2, b"curveMember") => member_has_coords = false,
+                        (3, b"LineString") => in_curve = false,
+                        (3, b"Curve") => in_curve = true,
+                        (4, b"posList") if !in_curve => (),
+                        (4, b"segments") if in_curve => (),
+                        (5, b"LineStringSegment") => (),
+                        (6, b"posList") => (),
+                        _ => {
+                            return Err(ParseError::SchemaViolation(format!(
+                                "Unexpected/unimplemented element <{}> in Ring",
+                                String::from_utf8_lossy(start.name().as_ref())
+                            )));
+                        }
+                    }
+                }
+                Ok((_, Event::Start(start))) => {
+                    return Err(ParseError::SchemaViolation(format!(
+                        "Only GML elements are allowed but found <{}>",
+                        String::from_utf8_lossy(start.name().as_ref())
+                    )));
+                }
+                Ok((_, Event::End(_))) => {
+                    depth -= 1;
+                    if depth == 1 && !member_has_coords {
+                        return Err(ParseError::SchemaViolation(
+                            "curveMember in Ring must contain an inline curve".into(),
+                        ));
+                    }
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                Ok((_, Event::Text(text))) => {
+                    if depth != if in_curve { 6 } else { 4 } {
+                        return Err(ParseError::SchemaViolation(
+                            "Unexpected text content".into(),
+                        ));
+                    }
+
+                    // parse coordinate sequence
+                    self.state.fp_buf.clear();
+                    let unescaped_text = text
+                        .unescape()
+                        .map_err(|e| ParseError::InvalidValue(format!("Unescape error: {e}")))?;
+                    Self::parse_pos_list(&unescaped_text, &mut self.state.fp_buf)?;
+
+                    if !self.state.fp_buf.len().is_multiple_of(3) {
+                        return Err(ParseError::InvalidValue(
+                            "Length of coordinate numbers must be multiple of 3".into(),
+                        ));
+                    }
+
+                    let mut coords = self.state.fp_buf.as_chunks::<3>().0.iter().copied();
+                    if let Some(last) = ring.last().copied() {
+                        let first = coords.next();
+                        if first != Some(last) {
+                            return Err(ParseError::InvalidValue(format!(
+                                "Curve members of Ring are not connected: {last:?} -> {first:?}"
+                            )));
+                        }
+                    }
+                    ring.extend(coords);
+                    member_has_coords = true;
+                }
+                Ok(_) => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        if ring.first() != ring.last() || ring.len() < 4 {
+            return Err(ParseError::InvalidValue(
+                "Ring must be closed and have at least 4 points".into(),
+            ));
+        }
+        Ok(ring)
     }
 
     /// Parses <app:target> of ParameterizedTexture
@@ -2321,6 +2438,202 @@ mod tests {
         "#,
             |sr| {
                 sr.parse_polygon().expect("Should parse valid polygon");
+            },
+        );
+    }
+
+    #[test]
+    fn parse_polygon_with_ring() {
+        // An interior gml:Ring made of a LineString and a Curve that join at (1 1 0) and (2 1 0)
+        parse(
+            r#"
+            <gml:Polygon xmlns:gml="http://www.opengis.net/gml">
+                <gml:exterior>
+                    <gml:LinearRing>
+                        <gml:posList>0 0 0 3 0 0 3 3 0 0 3 0 0 0 0</gml:posList>
+                    </gml:LinearRing>
+                </gml:exterior>
+                <gml:interior>
+                    <gml:Ring gml:id="ring1">
+                        <gml:curveMember>
+                            <gml:LineString>
+                                <gml:posList>1 1 0 1 2 0 2 2 0</gml:posList>
+                            </gml:LineString>
+                        </gml:curveMember>
+                        <gml:curveMember>
+                            <gml:Curve>
+                                <gml:segments>
+                                    <gml:LineStringSegment>
+                                        <gml:posList>2 2 0 2 1 0</gml:posList>
+                                    </gml:LineStringSegment>
+                                    <gml:LineStringSegment>
+                                        <gml:posList>2 1 0 1 1 0</gml:posList>
+                                    </gml:LineStringSegment>
+                                </gml:segments>
+                            </gml:Curve>
+                        </gml:curveMember>
+                    </gml:Ring>
+                </gml:interior>
+            </gml:Polygon>
+        "#,
+            |sr| {
+                sr.parse_polygon().expect("Should parse polygon with Ring");
+                let geometries = sr.collect_geometries(None);
+                assert_eq!(geometries.multipolygon.len(), 1);
+                let poly = geometries.multipolygon.get(0);
+                assert_eq!(poly.exterior().len(), 4);
+                let interiors: Vec<_> = poly.interiors().collect();
+                assert_eq!(interiors.len(), 1);
+                // the closing point is dropped by the collector
+                let hole: Vec<[f64; 3]> = interiors[0]
+                    .iter()
+                    .map(|i| geometries.vertices[i as usize])
+                    .collect();
+                assert_eq!(
+                    hole,
+                    vec![[1., 1., 0.], [1., 2., 0.], [2., 2., 0.], [2., 1., 0.]]
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn parse_polygon_with_disconnected_ring() {
+        parse(
+            r#"
+            <gml:Polygon xmlns:gml="http://www.opengis.net/gml">
+                <gml:exterior>
+                    <gml:Ring>
+                        <gml:curveMember>
+                            <gml:LineString>
+                                <gml:posList>0 0 0 1 0 0 1 1 0</gml:posList>
+                            </gml:LineString>
+                        </gml:curveMember>
+                        <gml:curveMember>
+                            <gml:LineString>
+                                <gml:posList>1 2 0 0 1 0 0 0 0</gml:posList>
+                            </gml:LineString>
+                        </gml:curveMember>
+                    </gml:Ring>
+                </gml:exterior>
+            </gml:Polygon>
+        "#,
+            |sr| {
+                let err = sr
+                    .parse_polygon()
+                    .expect_err("Should fail with disconnected curve members");
+                assert!(format!("{err:?}").contains("not connected"), "{err:?}");
+            },
+        );
+    }
+
+    #[test]
+    fn parse_polygon_with_unclosed_ring() {
+        parse(
+            r#"
+            <gml:Polygon xmlns:gml="http://www.opengis.net/gml">
+                <gml:exterior>
+                    <gml:Ring>
+                        <gml:curveMember>
+                            <gml:LineString>
+                                <gml:posList>0 0 0 1 0 0 1 1 0 0 1 0</gml:posList>
+                            </gml:LineString>
+                        </gml:curveMember>
+                    </gml:Ring>
+                </gml:exterior>
+            </gml:Polygon>
+        "#,
+            |sr| {
+                let err = sr
+                    .parse_polygon()
+                    .expect_err("Should fail with an unclosed ring");
+                assert!(format!("{err:?}").contains("must be closed"), "{err:?}");
+            },
+        );
+    }
+
+    #[test]
+    fn parse_polygon_with_ring_href_member() {
+        parse(
+            r##"
+            <gml:Polygon xmlns:gml="http://www.opengis.net/gml" xmlns:xlink="http://www.w3.org/1999/xlink">
+                <gml:exterior>
+                    <gml:Ring>
+                        <gml:curveMember xlink:href="#curve1"/>
+                    </gml:Ring>
+                </gml:exterior>
+            </gml:Polygon>
+        "##,
+            |sr| {
+                let err = sr
+                    .parse_polygon()
+                    .expect_err("Should fail with a curveMember by reference");
+                assert!(format!("{err:?}").contains("inline curve"), "{err:?}");
+            },
+        );
+    }
+
+    #[test]
+    fn parse_solid_with_triangulated_surface() {
+        parse(
+            r#"
+            <gml:Solid xmlns:gml="http://www.opengis.net/gml">
+                <gml:exterior>
+                    <gml:TriangulatedSurface>
+                        <gml:trianglePatches>
+                            <gml:Triangle>
+                                <gml:exterior>
+                                    <gml:LinearRing>
+                                        <gml:posList>0 0 0 1 0 0 0 1 0 0 0 0</gml:posList>
+                                    </gml:LinearRing>
+                                </gml:exterior>
+                            </gml:Triangle>
+                            <gml:Triangle>
+                                <gml:exterior>
+                                    <gml:LinearRing>
+                                        <gml:posList>1 0 0 1 1 0 0 1 0 1 0 0</gml:posList>
+                                    </gml:LinearRing>
+                                </gml:exterior>
+                            </gml:Triangle>
+                        </gml:trianglePatches>
+                    </gml:TriangulatedSurface>
+                </gml:exterior>
+            </gml:Solid>
+        "#,
+            |sr| {
+                sr.parse_solid()
+                    .expect("Should parse Solid with TriangulatedSurface");
+                let geometries = sr.collect_geometries(None);
+                assert_eq!(geometries.multipolygon.len(), 2);
+            },
+        );
+    }
+
+    #[test]
+    fn parse_geometry_prop_with_triangulated_surface() {
+        parse(
+            r#"
+            <bldg:lod1Geometry xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
+                <gml:TriangulatedSurface>
+                    <gml:trianglePatches>
+                        <gml:Triangle>
+                            <gml:exterior>
+                                <gml:LinearRing>
+                                    <gml:posList>0 0 0 1 0 0 0 1 0 0 0 0</gml:posList>
+                                </gml:LinearRing>
+                            </gml:exterior>
+                        </gml:Triangle>
+                    </gml:trianglePatches>
+                </gml:TriangulatedSurface>
+            </bldg:lod1Geometry>
+        "#,
+            |sr| {
+                let mut geomrefs = GeometryRefs::new();
+                sr.parse_geometry_prop(&mut geomrefs, 1, None, None, None)
+                    .expect("Should parse TriangulatedSurface in a geometry property");
+                assert_eq!(geomrefs.len(), 1);
+                assert_eq!(geomrefs[0].ty, GeometryType::Triangle);
+                assert_eq!(geomrefs[0].len, 1);
             },
         );
     }

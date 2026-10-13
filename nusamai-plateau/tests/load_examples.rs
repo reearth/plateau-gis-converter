@@ -1,8 +1,8 @@
 pub mod common;
 
 use common::{load_cityobjs, load_cityobjs_from_zstd};
-use nusamai_citygml::{Code, Date, Measure};
-use nusamai_plateau::models::{relief, uro, TopLevelCityObject};
+use nusamai_citygml::{CityGmlElement, CityGmlReader, Code, Date, Measure, ParseContext};
+use nusamai_plateau::models::{relief, uro, Railway, TopLevelCityObject};
 
 // #[test]
 // fn load_area_example() {
@@ -323,6 +323,47 @@ fn load_dem_example() {
             .sum::<usize>(),
         1066
     );
+}
+
+#[test]
+fn load_railway_track_lod2_network() {
+    // uro:lod2Network (gml:GeometricComplexPropertyType) holds a gml:CompositeCurve
+    let doc = r#"
+        <tran:Railway xmlns:gml="http://www.opengis.net/gml"
+                      xmlns:tran="http://www.opengis.net/citygml/transportation/2.0"
+                      xmlns:uro="https://www.geospatial.jp/iur/uro/3.0">
+            <tran:trafficArea>
+                <tran:TrafficArea>
+                    <uro:railwayTrackAttribute>
+                        <uro:RailwayTrackAttribute>
+                            <uro:lod2Network>
+                                <gml:CompositeCurve>
+                                    <gml:curveMember>
+                                        <gml:Curve>
+                                            <gml:segments>
+                                                <gml:LineStringSegment>
+                                                    <gml:posList>0 0 0 1 1 0 2 1 0</gml:posList>
+                                                </gml:LineStringSegment>
+                                            </gml:segments>
+                                        </gml:Curve>
+                                    </gml:curveMember>
+                                </gml:CompositeCurve>
+                            </uro:lod2Network>
+                        </uro:RailwayTrackAttribute>
+                    </uro:railwayTrackAttribute>
+                </tran:TrafficArea>
+            </tran:trafficArea>
+        </tran:Railway>
+    "#;
+    let mut reader = quick_xml::NsReader::from_str(doc);
+    let mut citygml_reader = CityGmlReader::new(ParseContext::default());
+    let mut st = citygml_reader.start_root(&mut reader).unwrap();
+    let mut railway = Railway::default();
+    railway.parse(&mut st).unwrap();
+    let geometries = st.collect_geometries(None);
+
+    assert_eq!(railway.traffic_area[0].railway_track_attribute.len(), 1);
+    assert_eq!(geometries.multilinestring.len(), 1);
 }
 
 #[test]
