@@ -20,7 +20,7 @@ pub struct CityFurniture {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<uro::DmAttributeProperty>, // -> uro:DmAttribute

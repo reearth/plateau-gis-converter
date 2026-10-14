@@ -41,7 +41,7 @@ pub struct Appurtenance {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -110,7 +110,7 @@ pub struct Cable {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -209,7 +209,7 @@ pub struct Duct {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -302,7 +302,7 @@ pub struct ElectricityCable {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -401,7 +401,7 @@ pub struct Handhole {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -482,7 +482,7 @@ pub struct Manhole {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -566,7 +566,7 @@ pub struct OilGasChemicalsPipe {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -665,7 +665,7 @@ pub struct Pipe {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -764,7 +764,7 @@ pub struct SewerPipe {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -875,7 +875,7 @@ pub struct TelecommunicationsCable {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -974,7 +974,7 @@ pub struct ThermalPipe {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute
@@ -1073,7 +1073,7 @@ pub struct WaterPipe {
         path = b"uro:cityFurnitureDataQualityAttribute/uro:CityFurnitureDataQualityAttribute"
     )]
     #[citygml(path = b"uro:frnDataQualityAttribute/uro:DataQualityAttribute")]
-    pub frn_data_quality_attribute: Option<DataQualityAttribute>,
+    pub frn_data_quality_attribute: Vec<DataQualityAttribute>,
 
     #[citygml(path = b"uro:frnDmAttribute")]
     pub frn_dm_attribute: Vec<DmAttributeProperty>, // -> uro:DmAttribute

@@ -21,7 +21,7 @@ pub struct LandUse {
 
     #[citygml(path = b"uro:luseDataQualityAttribute/uro:LandUseDataQualityAttribute")]
     #[citygml(path = b"uro:luseDataQualityAttribute/uro:DataQualityAttribute")]
-    pub luse_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub luse_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:luseDmAttribute")]
     pub luse_dm_attribute: Vec<uro::DmAttributeProperty>, // -> uro:DmAttribute

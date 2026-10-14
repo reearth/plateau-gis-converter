@@ -158,9 +158,62 @@ fn load_cityfurniture_example() {
 
     assert_eq!(frn.function, vec![Code::new("柱".into(), "4800".into())]);
     assert_eq!(
-        frn.frn_data_quality_attribute.as_ref().unwrap().src_scale,
+        frn.frn_data_quality_attribute[0].src_scale,
         vec![Code::new("地図情報レベル500".into(), "3".into(),)]
     );
+}
+
+/// Parses `doc` (a single feature as the root element) into `T`
+fn parse_inline<T: nusamai_citygml::CityGmlElement + Default>(doc: &str) -> T {
+    let mut reader = quick_xml::NsReader::from_str(doc);
+    let mut citygml_reader =
+        nusamai_citygml::CityGmlReader::new(nusamai_citygml::ParseContext::default());
+    let mut st = citygml_reader.start_root(&mut reader).unwrap();
+    let mut obj = T::default();
+    obj.parse(&mut st).unwrap();
+    obj
+}
+
+#[test]
+fn load_repeated_data_quality_attribute() {
+    // *DataQualityAttribute properties of the uro ADE are unbounded
+    let building: nusamai_plateau::models::Building = parse_inline(
+        r#"
+        <bldg:Building xmlns:bldg="http://www.opengis.net/citygml/building/2.0"
+                       xmlns:uro="https://www.geospatial.jp/iur/uro/3.1">
+            <uro:bldgDataQualityAttribute>
+                <uro:DataQualityAttribute><uro:thematicSrcDesc>1</uro:thematicSrcDesc></uro:DataQualityAttribute>
+            </uro:bldgDataQualityAttribute>
+            <uro:bldgDataQualityAttribute>
+                <uro:DataQualityAttribute><uro:thematicSrcDesc>2</uro:thematicSrcDesc></uro:DataQualityAttribute>
+            </uro:bldgDataQualityAttribute>
+            <uro:bldgDataQualityAttribute>
+                <uro:DataQualityAttribute><uro:thematicSrcDesc>3</uro:thematicSrcDesc></uro:DataQualityAttribute>
+            </uro:bldgDataQualityAttribute>
+        </bldg:Building>
+        "#,
+    );
+    let codes: Vec<_> = building
+        .bldg_data_quality_attribute
+        .iter()
+        .map(|dq| dq.thematic_src_desc[0].value())
+        .collect();
+    assert_eq!(codes, ["1", "2", "3"]);
+
+    let bridge: nusamai_plateau::models::Bridge = parse_inline(
+        r#"
+        <brid:Bridge xmlns:brid="http://www.opengis.net/citygml/bridge/2.0"
+                     xmlns:uro="https://www.geospatial.jp/iur/uro/3.1">
+            <uro:bridDataQualityAttribute>
+                <uro:DataQualityAttribute><uro:thematicSrcDesc>1</uro:thematicSrcDesc></uro:DataQualityAttribute>
+            </uro:bridDataQualityAttribute>
+            <uro:bridDataQualityAttribute>
+                <uro:DataQualityAttribute><uro:thematicSrcDesc>2</uro:thematicSrcDesc></uro:DataQualityAttribute>
+            </uro:bridDataQualityAttribute>
+        </brid:Bridge>
+        "#,
+    );
+    assert_eq!(bridge.brid_data_quality_attribute.len(), 2);
 }
 
 #[test]
