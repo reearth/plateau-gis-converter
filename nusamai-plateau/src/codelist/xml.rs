@@ -48,12 +48,12 @@ fn expect_text<R: BufRead>(
     }
 }
 
+/// Returns `None` if the definition has no name
 fn parse_definition<R: BufRead>(
     reader: &mut quick_xml::NsReader<R>,
-    definitions: &mut HashMap<String, Definition>,
     buf: &mut Vec<u8>,
     buf2: &mut Vec<u8>,
-) -> Result<(), ParseError> {
+) -> Result<Option<(String, Definition)>, ParseError> {
     let mut depth = 1;
     let mut identifier = None;
     let mut value = None;
@@ -64,7 +64,8 @@ fn parse_definition<R: BufRead>(
                 let (nsres, localname) = reader.resolve_element(start.name());
                 match (depth, nsres, localname.as_ref()) {
                     (2, Bound(GML31_NS), b"name") => {
-                        identifier = Some(expect_text(reader, buf, false)?);
+                        // an empty name is treated as no name
+                        identifier = Some(expect_text(reader, buf, true)?);
                         depth -= 1;
                     }
                     (2, Bound(GML31_NS), b"description") => {
@@ -94,13 +95,11 @@ fn parse_definition<R: BufRead>(
         }
     }
 
-    match (identifier, value) {
-        (Some(key), Some(value)) => {
-            definitions.insert(key, Definition { value });
-            Ok(())
-        }
-        _ => Err(ParseError::SchemaViolation(
-            "Both <name> and <description> are required in a code definition.".into(),
+    match (identifier.filter(|name| !name.is_empty()), value) {
+        (None, _) => Ok(None),
+        (Some(key), Some(value)) => Ok(Some((key, Definition { value }))),
+        (Some(_), None) => Err(ParseError::SchemaViolation(
+            "<description> is required in a code definition.".into(),
         )),
     }
 }
@@ -117,6 +116,8 @@ pub fn parse_dictionary<R: BufRead>(
     let mut buf = Vec::new();
     let mut buf2 = Vec::new();
     let mut definitions = HashMap::default();
+    let mut dictionary_name = String::new();
+    let mut unnamed_ids = Vec::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -132,13 +133,22 @@ pub fn parse_dictionary<R: BufRead>(
                         )))
                     }
                     (2, Bound(GML31_NS), b"name") => {
-                        // Just ignore it for now.
-                        let _name = expect_text(&mut reader, &mut buf, false)?;
+                        dictionary_name = expect_text(&mut reader, &mut buf, false)?;
                         depth -= 1;
                     }
                     (2, Bound(GML31_NS), b"dictionaryEntry") => {}
                     (3, Bound(GML31_NS), b"Definition") => {
-                        parse_definition(&mut reader, &mut definitions, &mut buf, &mut buf2)?;
+                        let id = start
+                            .attributes()
+                            .flatten()
+                            .find(|attr| attr.key.local_name().as_ref() == b"id")
+                            .map(|attr| String::from_utf8_lossy(&attr.value).into_owned());
+                        match parse_definition(&mut reader, &mut buf, &mut buf2)? {
+                            Some((key, definition)) => {
+                                definitions.insert(key, definition);
+                            }
+                            None => unnamed_ids.push(id.unwrap_or_default()),
+                        }
                         depth -= 1;
                     }
                     _ => {
@@ -151,6 +161,12 @@ pub fn parse_dictionary<R: BufRead>(
                 depth -= 1;
             }
             Ok(Event::Eof) => {
+                if !unnamed_ids.is_empty() {
+                    log::warn!(
+                        "Skipped {} code definitions without a name in dictionary {dictionary_name:?}: {unnamed_ids:?}",
+                        unnamed_ids.len()
+                    );
+                }
                 return Ok(definitions);
             }
             Ok(_) => {}
@@ -246,37 +262,50 @@ mod tests {
     }
 
     #[test]
-    fn broken_1() {
-        // lack of name tag
-        const BROKEN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-            <gml:Dictionary xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:gml="http://www.opengis.net/gml" xsi:schemaLocation="http://www.opengis.net/gml http://schemas.opengis.net/gml/3.1.1/profiles/SimpleDictionary/1.0.0/gmlSimpleDictionaryProfile.xsd" gml:id="xxxxx">
+    fn unnamed_definitions_are_skipped() {
+        const EXAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+            <gml:Dictionary xmlns:gml="http://www.opengis.net/gml" gml:id="xxxxx">
                 <gml:name>Test_test</gml:name>
                 <gml:dictionaryEntry>
                     <gml:Definition gml:id="id1">
                         <gml:description>業務施設</gml:description>
+                        <gml:name>401</gml:name>
                     </gml:Definition>
                 </gml:dictionaryEntry>
-            </gml:Dictionary>
-        "#;
-
-        let reader = BufReader::new(std::io::Cursor::new(BROKEN));
-        parse_dictionary(reader).unwrap_err();
-    }
-
-    #[test]
-    fn broken_2() {
-        // lack of text content
-        const BROKEN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-            <gml:Dictionary xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:gml="http://www.opengis.net/gml" xsi:schemaLocation="http://www.opengis.net/gml http://schemas.opengis.net/gml/3.1.1/profiles/SimpleDictionary/1.0.0/gmlSimpleDictionaryProfile.xsd" gml:id="xxxxx">
-                <gml:name>Test_test</gml:name>
                 <gml:dictionaryEntry>
-                    <gml:Definition gml:id="id1">
-                        <gml:description>業務施設</gml:description>
+                    <gml:Definition gml:id="id2">
+                        <gml:description></gml:description>
                         <gml:name></gml:name>
                     </gml:Definition>
                 </gml:dictionaryEntry>
+                <gml:dictionaryEntry>
+                    <gml:Definition gml:id="id3">
+                        <gml:description>商業施設</gml:description>
+                    </gml:Definition>
+                </gml:dictionaryEntry>
             </gml:Dictionary>
         "#;
+
+        let reader = BufReader::new(std::io::Cursor::new(EXAMPLE));
+        let definitions = parse_dictionary(reader).unwrap();
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions.get("401").unwrap().value(), "業務施設");
+    }
+
+    #[test]
+    fn broken_1() {
+        // lack of description tag
+        const BROKEN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+            <gml:Dictionary xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:gml="http://www.opengis.net/gml" xsi:schemaLocation="http://www.opengis.net/gml http://schemas.opengis.net/gml/3.1.1/profiles/SimpleDictionary/1.0.0/gmlSimpleDictionaryProfile.xsd" gml:id="xxxxx">
+                <gml:name>Test_test</gml:name>
+                <gml:dictionaryEntry>
+                    <gml:Definition gml:id="id1">
+                        <gml:name>401</gml:name>
+                    </gml:Definition>
+                </gml:dictionaryEntry>
+            </gml:Dictionary>
+        "#;
+
         let reader = BufReader::new(std::io::Cursor::new(BROKEN));
         parse_dictionary(reader).unwrap_err();
     }
