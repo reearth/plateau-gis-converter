@@ -109,13 +109,15 @@ impl<'a> ParseContext<'a> {
         Self {
             source_uri,
             code_resolver,
-            lenient: false,
+            lenient: true,
         }
     }
 
     /// In lenient mode, a property that fails to parse (e.g. an unknown element,
     /// an invalid value or a broken geometry) is skipped with a warning instead of
     /// failing the whole parse. Broken XML is still an error.
+    ///
+    /// Lenient mode is the default. Pass `false` to fail on the first error.
     pub fn with_lenient(mut self, lenient: bool) -> Self {
         self.lenient = lenient;
         self
@@ -139,7 +141,7 @@ impl Default for ParseContext<'_> {
         Self {
             source_uri: Url::parse("file:///").unwrap(),
             code_resolver: &codelist::NoopResolver {},
-            lenient: false,
+            lenient: true,
         }
     }
 }

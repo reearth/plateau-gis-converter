@@ -188,7 +188,7 @@ fn parse_duplicate_content() {
         #[citygml(path = b"only_once")]
         only_once: Option<i64>,
     }
-    let context = ParseContext::default();
+    let context = ParseContext::default().with_lenient(false);
     match CityGmlReader::new(context).start_root(&mut xml_reader) {
         Ok(mut st) => {
             let mut root = Root::default();
