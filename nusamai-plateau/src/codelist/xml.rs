@@ -18,6 +18,7 @@ impl Definition {
 fn expect_text<R: BufRead>(
     reader: &mut quick_xml::NsReader<R>,
     buf: &mut Vec<u8>,
+    allow_empty: bool,
 ) -> Result<String, ParseError> {
     let mut s = String::new();
     loop {
@@ -34,7 +35,7 @@ fn expect_text<R: BufRead>(
                 })?);
             }
             Ok(Event::End(_)) => {
-                if s.is_empty() {
+                if s.is_empty() && !allow_empty {
                     return Err(ParseError::SchemaViolation(
                         "Text content is expected, but an empty string is found.".into(),
                     ));
@@ -63,11 +64,12 @@ fn parse_definition<R: BufRead>(
                 let (nsres, localname) = reader.resolve_element(start.name());
                 match (depth, nsres, localname.as_ref()) {
                     (2, Bound(GML31_NS), b"name") => {
-                        identifier = Some(expect_text(reader, buf)?);
+                        identifier = Some(expect_text(reader, buf, false)?);
                         depth -= 1;
                     }
                     (2, Bound(GML31_NS), b"description") => {
-                        value = Some(expect_text(reader, buf)?);
+                        // gml:description is an xs:string, so it can be empty
+                        value = Some(expect_text(reader, buf, true)?);
                         depth -= 1;
                     }
                     _ => {
@@ -131,7 +133,7 @@ pub fn parse_dictionary<R: BufRead>(
                     }
                     (2, Bound(GML31_NS), b"name") => {
                         // Just ignore it for now.
-                        let _name = expect_text(&mut reader, &mut buf)?;
+                        let _name = expect_text(&mut reader, &mut buf, false)?;
                         depth -= 1;
                     }
                     (2, Bound(GML31_NS), b"dictionaryEntry") => {}
@@ -215,6 +217,32 @@ mod tests {
         assert!(definitions.get("123").is_none()); // not exists
         assert!(definitions.get("不明").is_none()); // not exists
         assert!(definitions.get("業務施設").is_none()); // not exists
+    }
+
+    #[test]
+    fn empty_description() {
+        const EXAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+            <gml:Dictionary xmlns:gml="http://www.opengis.net/gml" gml:id="xxxxx">
+                <gml:name>Test_test</gml:name>
+                <gml:dictionaryEntry>
+                    <gml:Definition gml:id="id1">
+                        <gml:description>非該当</gml:description>
+                        <gml:name>0</gml:name>
+                    </gml:Definition>
+                </gml:dictionaryEntry>
+                <gml:dictionaryEntry>
+                    <gml:Definition gml:id="id2">
+                        <gml:description></gml:description>
+                        <gml:name>1</gml:name>
+                    </gml:Definition>
+                </gml:dictionaryEntry>
+            </gml:Dictionary>
+        "#;
+
+        let reader = BufReader::new(std::io::Cursor::new(EXAMPLE));
+        let definitions = parse_dictionary(reader).unwrap();
+        assert_eq!(definitions.get("0").unwrap().value(), "非該当");
+        assert_eq!(definitions.get("1").unwrap().value(), "");
     }
 
     #[test]
