@@ -469,8 +469,24 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
 
         // The property element is still open unless the error was raised after its end tag
         if self.state.path_stack_indices.len() >= point.depth {
-            self.reader
-                .read_to_end_into(QName(&point.name), &mut self.state.buf1)?;
+            // Elements with the same name as the property may still be open inside it
+            // (e.g. nested gen:genericAttributeSet). Each of them needs its own end tag.
+            let path_buf = &self.state.path_buf;
+            let starts = &self.state.path_stack_indices[point.depth - 1..];
+            let ends = starts.iter().skip(1).copied().chain([path_buf.len()]);
+            // "/{ns_prefix}:{localname}", optionally followed by "[{attributes}]"
+            let name_of =
+                |start: usize, end: usize| path_buf[start + 1..end].split(|&c| c == b'[').next();
+            let property_name = name_of(starts[0], ends.clone().next().unwrap());
+            let open = starts
+                .iter()
+                .zip(ends)
+                .filter(|&(&start, end)| name_of(start, end) == property_name)
+                .count();
+            for _ in 0..open {
+                self.reader
+                    .read_to_end_into(QName(&point.name), &mut self.state.buf1)?;
+            }
             self.state
                 .path_buf
                 .truncate(self.state.path_stack_indices[point.depth - 1]);
