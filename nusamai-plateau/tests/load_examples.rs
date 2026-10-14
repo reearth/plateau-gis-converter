@@ -303,6 +303,41 @@ fn load_landuse_example() {
 // }
 
 #[test]
+fn load_construction_base_attribute_administrator() {
+    use nusamai_citygml::CityGmlElement;
+    use nusamai_plateau::models::uro::ConstructionBaseAttribute;
+
+    // i-UR 3.0/3.1 spell it "administorator", 3.2 "administrator"
+    for (doc, expected) in [
+        (
+            "<uro:administorator>A</uro:administorator>",
+            (Some("A"), None),
+        ),
+        (
+            "<uro:administrator>B</uro:administrator>",
+            (None, Some("B")),
+        ),
+    ] {
+        let doc = format!(
+            r#"<uro:ConstructionBaseAttribute xmlns:uro="https://www.geospatial.jp/iur/uro/3.1">{doc}</uro:ConstructionBaseAttribute>"#
+        );
+        let mut reader = quick_xml::NsReader::from_str(&doc);
+        let mut citygml_reader =
+            nusamai_citygml::CityGmlReader::new(nusamai_citygml::ParseContext::default());
+        let mut st = citygml_reader.start_root(&mut reader).unwrap();
+        let mut attr = ConstructionBaseAttribute::default();
+        attr.parse(&mut st).unwrap();
+        assert_eq!(
+            (
+                attr.administorator.as_deref(),
+                attr.administrator.as_deref()
+            ),
+            expected
+        );
+    }
+}
+
+#[test]
 fn load_dem_example() {
     let cityobjs = load_cityobjs("./tests/data/yokosuka-shi/udx/dem/523965_dem_6697_05_op.gml");
     assert_eq!(cityobjs.len(), 2);
