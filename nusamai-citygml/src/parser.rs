@@ -21,6 +21,10 @@ use crate::{
     CityGmlAttribute, LocalId, SurfaceSpan, XLINK_NS,
 };
 
+/// Maximum difference between the first and last UV coords of a ring
+/// for them to be treated as the same point
+const UV_CLOSING_TOLERANCE: f64 = 1e-6;
+
 static PROPERTY_PATTERN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"([a-zA-Z0-9:_]+)\[([^\]]+)\]").unwrap());
 
@@ -2062,22 +2066,26 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         ));
                     }
 
-                    // remove closing point
-                    {
-                        let len = self.state.fp_buf.len();
-                        if len >= 4
-                            && self.state.fp_buf[0] == self.state.fp_buf[len - 2]
-                            && self.state.fp_buf[1] == self.state.fp_buf[len - 1]
-                        {
-                            self.state.fp_buf.pop();
-                            self.state.fp_buf.pop();
-                        } else {
-                            return Err(ParseError::InvalidValue(format!(
-                                "The last UV coord must be the same as the first: {:?}",
-                                self.state.fp_buf
-                            )));
-                        }
+                    // Remove the closing point. It pairs with the ring's closing vertex,
+                    // which is dropped too, so it is removed even when it differs
+                    // from the first (e.g. by rounding).
+                    let len = self.state.fp_buf.len();
+                    if len < 4 {
+                        return Err(ParseError::InvalidValue(format!(
+                            "At least 2 UV coords are expected: {:?}",
+                            self.state.fp_buf
+                        )));
                     }
+                    let (first, last) = (&self.state.fp_buf[..2], &self.state.fp_buf[len - 2..]);
+                    if (first[0] - last[0]).abs() > UV_CLOSING_TOLERANCE
+                        || (first[1] - last[1]).abs() > UV_CLOSING_TOLERANCE
+                    {
+                        log::warn!(
+                            "UV coords of ring {:?} are expected to end with the first coord {first:?}, but end with {last:?}. The last coord is dropped as the closing point anyway.",
+                            ring.as_ref().map(|r: &LocalId| r.0.as_str())
+                        );
+                    }
+                    self.state.fp_buf.truncate(len - 2);
 
                     coords = Some(mem::take(&mut self.state.fp_buf));
                 }
@@ -2496,6 +2504,28 @@ mod tests {
             "parse succeeded but feature_stack was corrupted: \
              <sibling/> inherited stale feature_id={sibling_fid:?} \
              from the skipped cross-file href element"
+        );
+    }
+
+    #[test]
+    fn parse_tex_coord_list_drops_closing_uv() {
+        // The second ring's last UV differs from its first one
+        parse(
+            r##"
+            <app:TexCoordList xmlns:app="http://www.opengis.net/citygml/appearance/2.0">
+                <app:textureCoordinates ring="#ring1">0 0 1 0 1 1 0 0</app:textureCoordinates>
+                <app:textureCoordinates ring="#ring2">0 0 1 0 1 1 0.01 0</app:textureCoordinates>
+            </app:TexCoordList>
+        "##,
+            |sr| {
+                let mut tex_coords = TexCoordList::default();
+                sr.parse_tex_coord_list(&mut tex_coords)
+                    .expect("Should parse TexCoordList");
+                assert_eq!(
+                    tex_coords.coords_list,
+                    vec![vec![0., 0., 1., 0., 1., 1.], vec![0., 0., 1., 0., 1., 1.]]
+                );
+            },
         );
     }
 }

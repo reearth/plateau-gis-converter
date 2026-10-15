@@ -734,6 +734,28 @@ fn load_urf_yoto_example() {
 }
 
 #[test]
+fn load_urf_rate_unknown_value() {
+    use nusamai_citygml::CityGmlElement;
+
+    // -9999 (unknown) is valid for the xs:integer rate attributes
+    let doc = r#"
+        <urf:UseDistrict xmlns:urf="https://www.geospatial.jp/iur/urf/3.1">
+            <urf:floorAreaRate>-9999</urf:floorAreaRate>
+            <urf:buildingCoverageRate>60</urf:buildingCoverageRate>
+        </urf:UseDistrict>
+    "#;
+    let mut reader = quick_xml::NsReader::from_str(doc);
+    let mut citygml_reader =
+        nusamai_citygml::CityGmlReader::new(nusamai_citygml::ParseContext::default());
+    let mut st = citygml_reader.start_root(&mut reader).unwrap();
+    let mut use_district = nusamai_plateau::models::urf::UseDistrict::default();
+    use_district.parse(&mut st).unwrap();
+
+    assert_eq!(use_district.floor_area_rate, Some(-9999));
+    assert_eq!(use_district.building_coverage_rate, Some(60));
+}
+
+#[test]
 fn load_urf_boka_example() {
     let cityobjs = load_cityobjs("./tests/data/kawasaki-shi/udx/urf/533916_urf_6668_boka_op.gml");
     assert_eq!(cityobjs.len(), 2);
