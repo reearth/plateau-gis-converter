@@ -16,7 +16,8 @@ struct Feature {
 }
 
 // An invalid date, an unknown element, an invalid value inside nested generic attribute sets
-// of the same name, and a lod2MultiSurface whose second polygon has a NaN
+// of the same name, a lod2MultiSurface whose second polygon has a NaN, and a lod3MultiSurface
+// whose second MultiSurface has a NaN (after the first one got a geometry ref)
 const DOC: &str = r#"
     <bldg:Building xmlns:bldg="http://www.opengis.net/citygml/building/2.0" xmlns:gml="http://www.opengis.net/gml" xmlns:gen="http://www.opengis.net/citygml/generics/2.0">
         <date>2020-13-45</date>
@@ -61,6 +62,30 @@ const DOC: &str = r#"
                 </gml:surfaceMember>
             </gml:MultiSurface>
         </bldg:lod2MultiSurface>
+        <bldg:lod3MultiSurface>
+            <gml:MultiSurface>
+                <gml:surfaceMember>
+                    <gml:Polygon>
+                        <gml:exterior>
+                            <gml:LinearRing>
+                                <gml:posList>2 2 0 3 2 0 3 3 0 2 3 0 2 2 0</gml:posList>
+                            </gml:LinearRing>
+                        </gml:exterior>
+                    </gml:Polygon>
+                </gml:surfaceMember>
+            </gml:MultiSurface>
+            <gml:MultiSurface>
+                <gml:surfaceMember>
+                    <gml:Polygon>
+                        <gml:exterior>
+                            <gml:LinearRing>
+                                <gml:posList>4 4 0 5 4 0 5 5 NaN 4 4 0</gml:posList>
+                            </gml:LinearRing>
+                        </gml:exterior>
+                    </gml:Polygon>
+                </gml:surfaceMember>
+            </gml:MultiSurface>
+        </bldg:lod3MultiSurface>
         <name>kept</name>
     </bldg:Building>
 "#;
@@ -89,7 +114,8 @@ fn lenient_skips_broken_properties() {
     assert!(feature.generic_attribute.generic_attr_set.is_empty());
     assert_eq!(feature.name, Some("kept".into()));
 
-    // lod2 is dropped as a whole, including its valid first polygon
+    // lod2 and lod3 are dropped as a whole, including their valid first polygons and the
+    // geometry ref already added for lod3's first MultiSurface
     assert_eq!(feature.geometries.len(), 1);
     assert_eq!(feature.geometries[0].lod, 1);
     assert_eq!(geometries.multipolygon.len(), 1);

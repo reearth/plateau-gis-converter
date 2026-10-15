@@ -603,6 +603,22 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         lod: u8,
         geomtype: GeometryParseType,
     ) -> Result<(), ParseError> {
+        // On failure, drop the refs added so far, as their geometries are rolled back
+        // in lenient mode
+        let len = geomref.len();
+        let result = self.parse_geometric_attr_inner(geomref, lod, geomtype);
+        if result.is_err() {
+            geomref.truncate(len);
+        }
+        result
+    }
+
+    fn parse_geometric_attr_inner(
+        &mut self,
+        geomref: &mut GeometryRefs,
+        lod: u8,
+        geomtype: GeometryParseType,
+    ) -> Result<(), ParseError> {
         use GeometryParseType::*;
         let (feature_id, feature_type) = self.extract_feature_id_and_type();
         let property_name = self.extract_property_name();
