@@ -63,7 +63,7 @@ pub struct Building {
 
     #[citygml(path = b"uro:buildingDataQualityAttribute/uro:BuildingDataQualityAttribute")]
     #[citygml(path = b"uro:bldgDataQualityAttribute/uro:DataQualityAttribute")]
-    pub bldg_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub bldg_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:buildingDisasterRiskAttribute")]
     #[citygml(path = b"uro:bldgDisasterRiskAttribute")]
@@ -162,7 +162,7 @@ pub struct BuildingPart {
 
     #[citygml(path = b"uro:buildingDataQualityAttribute/uro:BuildingDataQualityAttribute")]
     #[citygml(path = b"uro:bldgDataQualityAttribute/uro:DataQualityAttribute")]
-    pub bldg_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub bldg_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:buildingDisasterRiskAttribute")]
     #[citygml(path = b"uro:bldgDisasterRiskAttribute")]

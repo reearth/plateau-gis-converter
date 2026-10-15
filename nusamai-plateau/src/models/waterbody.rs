@@ -26,7 +26,7 @@ pub struct WaterBody {
     pub water_body_detail_attribute: Vec<uro::WaterBodyDetailAttribute>,
 
     #[citygml(path = b"uro:wtrDataQualityAttribute/uro:DataQualityAttribute")]
-    pub wtr_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub wtr_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:wtrDmAttribute")]
     pub wtr_dm_attribute: Vec<uro::DmAttributeProperty>, // -> uro:DmAttribute

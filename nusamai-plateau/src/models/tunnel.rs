@@ -42,7 +42,7 @@ pub struct Tunnel {
 
     #[citygml(path = b"uro:tunDataQualityAttribute/uro:ConstructionDataQualityAttribute")]
     #[citygml(path = b"uro:tunDataQualityAttribute/uro:DataQualityAttribute")]
-    pub tun_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub tun_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:tunDisasterRiskAttribute")]
     pub tun_disaster_risk_attribute: Vec<uro::DisasterRiskAttributeProperty>, // -> uro:DisasterRiskAttribute
@@ -109,7 +109,7 @@ pub struct TunnelPart {
 
     #[citygml(path = b"uro:tunDataQualityAttribute/uro:ConstructionDataQualityAttribute")]
     #[citygml(path = b"uro:tunDataQualityAttribute/uro:DataQualityAttribute")]
-    pub tun_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub tun_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:tunDisasterRiskAttribute")]
     pub tun_disaster_risk_attribute: Vec<uro::DisasterRiskAttributeProperty>, // -> uro:DisasterRiskAttribute

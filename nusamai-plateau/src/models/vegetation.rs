@@ -6,7 +6,7 @@ use super::uro;
 pub struct SolitaryVegetationObject {
     #[citygml(path = b"uro:vegetationDataQualityAttribute/uro:VegetationDataQualityAttribute")]
     #[citygml(path = b"uro:vegDataQualityAttribute/uro:DataQualityAttribute")]
-    pub veg_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub veg_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:vegDmAttribute")]
     pub veg_dm_attribute: Vec<uro::DmAttributeProperty>, // -> uro:DmAttribute
@@ -49,7 +49,7 @@ pub struct SolitaryVegetationObject {
 pub struct PlantCover {
     #[citygml(path = b"uro:vegetationDataQualityAttribute/uro:VegetationDataQualityAttribute")]
     #[citygml(path = b"uro:vegDataQualityAttribute/uro:DataQualityAttribute")]
-    pub veg_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub veg_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:vegDmAttribute")]
     pub veg_dm_attribute: Vec<uro::DmAttributeProperty>, // -> uro:DmAttribute

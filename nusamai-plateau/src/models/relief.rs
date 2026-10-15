@@ -13,7 +13,7 @@ pub struct ReliefFeature {
     pub relief_component: Vec<ReliefComponentProperty>, // -> dem:_ReliefComponent
 
     #[citygml(path = b"uro:demDataQualityAttribute", required)]
-    pub dem_data_quality_attribute: Option<uro::DemDataQualityAttribute>,
+    pub dem_data_quality_attribute: Vec<uro::DemDataQualityAttribute>,
 }
 
 #[citygml_property(name = "dem:_ReliefComponentProperty")]

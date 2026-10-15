@@ -51,7 +51,7 @@ pub struct Bridge {
 
     #[citygml(path = b"uro:bridDataQualityAttribute/uro:ConstructionDataQualityAttribute")]
     #[citygml(path = b"uro:bridDataQualityAttribute/uro:DataQualityAttribute")]
-    pub brid_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub brid_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:bridDisasterRiskAttribute")]
     pub brid_disaster_risk_attribute: Vec<uro::DisasterRiskAttributeProperty>, // -> uro:DisasterRiskAttribute
@@ -127,7 +127,7 @@ pub struct BridgePart {
 
     #[citygml(path = b"uro:bridDataQualityAttribute/uro:ConstructionDataQualityAttribute")]
     #[citygml(path = b"uro:bridDataQualityAttribute/uro:DataQualityAttribute")]
-    pub brid_data_quality_attribute: Option<uro::DataQualityAttribute>,
+    pub brid_data_quality_attribute: Vec<uro::DataQualityAttribute>,
 
     #[citygml(path = b"uro:bridDisasterRiskAttribute")]
     pub brid_disaster_risk_attribute: Vec<uro::DisasterRiskAttributeProperty>, // -> uro:DisasterRiskAttribute
