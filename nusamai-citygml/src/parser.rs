@@ -3,7 +3,7 @@ use std::{io::BufRead, mem, str};
 use once_cell::sync::Lazy;
 use quick_xml::{
     events::{BytesStart, Event},
-    name::{Namespace, ResolveResult::Bound},
+    name::{Namespace, QName, ResolveResult::Bound},
     NsReader,
 };
 use regex::Regex;
@@ -520,15 +520,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
             Point => todo!(),      // FIXME
             MultiPoint => todo!(), // FIXME
             MultiCurve => {
-                self.parse_multi_curve_prop(geomref, lod, feature_id, feature_type, property_name)?
-            } // FIXME
-            CompositeCurve => self.parse_composite_curve_prop(
-                geomref,
-                lod,
-                feature_id,
-                feature_type,
-                property_name,
-            )?,
+                self.parse_curve_prop(geomref, lod, feature_id, feature_type, property_name, false)?
+            }
+            CompositeCurve => {
+                self.parse_curve_prop(geomref, lod, feature_id, feature_type, property_name, true)?
+            }
         }
 
         self.state
@@ -538,13 +534,14 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         Ok(())
     }
 
-    fn parse_multi_curve_prop(
+    fn parse_curve_prop(
         &mut self,
         geomrefs: &mut GeometryRefs,
         lod: u8,
         feature_id: Option<String>,
         feature_type: Option<String>,
         property_name: Option<PropertyType>,
+        composite: bool,
     ) -> Result<(), ParseError> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
@@ -556,89 +553,34 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let gml_geometry_type = GmlGeometryType::maybe_from_str(
                         &String::from_utf8_lossy(localname.as_ref()),
                     );
-                    let geomtype = match (nsres, localname.as_ref()) {
-                        (Bound(GML31_NS), b"MultiCurve") => {
-                            self.parse_multi_curve()?;
-                            GeometryType::Curve
+                    match (nsres, localname.as_ref(), composite) {
+                        (Bound(GML31_NS), b"MultiCurve", false) => self.parse_multi_curve()?,
+                        (Bound(GML31_NS), b"CompositeCurve", true) => {
+                            self.parse_composite_curve()?
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Expected MultiCurve but found <{}>",
+                                "Expected {} but found <{}>",
+                                if composite {
+                                    "CompositeCurve"
+                                } else {
+                                    "MultiCurve"
+                                },
                                 String::from_utf8_lossy(start.name().as_ref())
                             )))
                         }
-                    };
+                    }
 
                     let line_end = self.state.geometry_collector.multilinestring.len();
                     if line_end - line_begin > 0 {
                         geomrefs.push(GeometryRef {
-                            ty: geomtype,
+                            ty: GeometryType::Curve,
                             property_name,
                             gml_geometry_type,
                             lod,
                             pos: line_begin as u32,
                             len: (line_end - line_begin) as u32,
                             id: curve_id,
-                            feature_id: feature_id.clone(),
-                            feature_type: feature_type.clone(),
-                            unresolved_refs: vec![],
-                            resolved_ranges: vec![],
-                        });
-                    }
-                }
-                Ok(Event::End(_)) => break,
-                Ok(Event::Text(_)) => {
-                    return Err(ParseError::SchemaViolation(
-                        "Unexpected text content".into(),
-                    ))
-                }
-                Ok(_) => (),
-                Err(e) => return Err(e.into()),
-            }
-        }
-        Ok(())
-    }
-
-    fn parse_composite_curve_prop(
-        &mut self,
-        geomrefs: &mut GeometryRefs,
-        lod: u8,
-        feature_id: Option<String>,
-        feature_type: Option<String>,
-        property_name: Option<PropertyType>,
-    ) -> Result<(), ParseError> {
-        loop {
-            match self.reader.read_event_into(&mut self.state.buf1) {
-                Ok(Event::Start(start)) => {
-                    let (nsres, localname) = self.reader.resolve_element(start.name());
-                    let line_begin = self.state.geometry_collector.multilinestring.len();
-
-                    let gml_geometry_type = GmlGeometryType::maybe_from_str(
-                        &String::from_utf8_lossy(localname.as_ref()),
-                    );
-                    let geomtype = match (nsres, localname.as_ref()) {
-                        (Bound(GML31_NS), b"CompositeCurve") => {
-                            self.parse_composite_curve()?;
-                            GeometryType::Curve
-                        }
-                        _ => {
-                            return Err(ParseError::SchemaViolation(format!(
-                                "Expected CompositeCurve but found <{}>",
-                                String::from_utf8_lossy(start.name().as_ref())
-                            )))
-                        }
-                    };
-
-                    let line_end = self.state.geometry_collector.multilinestring.len();
-                    if line_end - line_begin > 0 {
-                        geomrefs.push(GeometryRef {
-                            ty: geomtype,
-                            property_name,
-                            gml_geometry_type,
-                            lod,
-                            pos: line_begin as u32,
-                            len: (line_end - line_begin) as u32,
-                            id: None,
                             feature_id: feature_id.clone(),
                             feature_type: feature_type.clone(),
                             unresolved_refs: vec![],
@@ -666,10 +608,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"curveMember") => {
-                            self.parse_curve_member()?;
+                            self.parse_curve_member(&mut CurveSink::LineStrings)?;
                         }
                         (Bound(GML31_NS), b"curveMembers") => {
-                            self.parse_curve_members()?;
+                            self.parse_curve_members(&mut CurveSink::LineStrings)?;
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -703,10 +645,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"curveMember") => {
-                            self.parse_curve_member()?;
+                            self.parse_curve_member(&mut CurveSink::LineStrings)?;
                         }
                         (Bound(GML31_NS), b"curveMembers") => {
-                            self.parse_curve_members()?;
+                            self.parse_curve_members(&mut CurveSink::LineStrings)?;
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1059,7 +1001,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             GeometryType::Surface
                         }
                         (Bound(GML31_NS), b"LineString") => {
-                            self.parse_linestring()?;
+                            self.parse_linestring(&mut CurveSink::LineStrings)?;
                             line_end = Some(self.state.geometry_collector.multilinestring.len());
                             GeometryType::Curve
                         }
@@ -1073,8 +1015,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                             line_end = Some(self.state.geometry_collector.multilinestring.len());
                             GeometryType::Curve
                         }
-                        (Bound(GML31_NS), b"TriangulatedSurface") => unimplemented!(),
-                        (Bound(GML31_NS), b"Tin") => unimplemented!(),
+                        (Bound(GML31_NS), b"TriangulatedSurface" | b"Tin") => {
+                            self.parse_triangulated_surface()?;
+                            poly_end = Some(self.state.geometry_collector.multipolygon.len());
+                            GeometryType::Triangle
+                        }
                         (Bound(GML31_NS), b"Point") => {
                             self.parse_point()?;
                             point_end = Some(self.state.geometry_collector.multipoint.len());
@@ -1225,17 +1170,17 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         Ok(())
     }
 
-    fn parse_curve_member(&mut self) -> Result<(), ParseError> {
+    fn parse_curve_member(&mut self, sink: &mut CurveSink) -> Result<(), ParseError> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"LineString") => {
-                            self.parse_linestring()?;
+                            self.parse_linestring(sink)?;
                         }
                         (Bound(GML31_NS), b"Curve") => {
-                            self.parse_curve()?;
+                            self.parse_curve(sink)?;
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1258,7 +1203,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_curve_members(&mut self) -> Result<(), ParseError> {
+    fn parse_curve_members(&mut self, sink: &mut CurveSink) -> Result<(), ParseError> {
         // curveMembers is an array property that contains multiple curve elements directly
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
@@ -1266,10 +1211,10 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"LineString") => {
-                            self.parse_linestring()?;
+                            self.parse_linestring(sink)?;
                         }
                         (Bound(GML31_NS), b"Curve") => {
-                            self.parse_curve()?;
+                            self.parse_curve(sink)?;
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1291,14 +1236,14 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_curve(&mut self) -> Result<(), ParseError> {
+    fn parse_curve(&mut self, sink: &mut CurveSink) -> Result<(), ParseError> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
                     let (nsres, localname) = self.reader.resolve_element(start.name());
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"segments") => {
-                            self.parse_curve_segments()?;
+                            self.parse_curve_segments(sink)?;
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1320,7 +1265,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_curve_segments(&mut self) -> Result<(), ParseError> {
+    fn parse_curve_segments(&mut self, sink: &mut CurveSink) -> Result<(), ParseError> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
                 Ok(Event::Start(start)) => {
@@ -1328,7 +1273,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     match (nsres, localname.as_ref()) {
                         (Bound(GML31_NS), b"LineStringSegment") => {
                             // LineStringSegment has same structure as LineString (posList)
-                            self.parse_linestring()?;
+                            self.parse_linestring(sink)?;
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
@@ -1367,6 +1312,9 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         (Bound(GML31_NS), b"CompositeSurface") => {
                             self.parse_composite_surface()?;
                         }
+                        (Bound(GML31_NS), b"TriangulatedSurface" | b"Tin") => {
+                            self.parse_triangulated_surface()?;
+                        }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
                                 "Unexpected/unimplemented element <{}> in Solid",
@@ -1387,17 +1335,45 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
+    /// Parses gml:TriangulatedSurface or gml:Tin.
+    ///
+    /// gml:Tin has stopLines, breakLines, maxLength and controlPoint after
+    /// trianglePatches. They are not needed for the triangle geometry, so they are skipped.
     fn parse_triangulated_surface(&mut self) -> Result<(), ParseError> {
-        if expect_start(
-            self.reader,
-            &mut self.state.buf1,
-            GML31_NS,
-            b"trianglePatches",
-        )? {
-            self.parse_triangle_patch_array()?;
-            expect_end(self.reader, &mut self.state.buf1)?;
+        loop {
+            match self.reader.read_event_into(&mut self.state.buf1) {
+                Ok(Event::Start(start)) => {
+                    let (nsres, localname) = self.reader.resolve_element(start.name());
+                    match (nsres, localname.as_ref()) {
+                        (Bound(GML31_NS), b"trianglePatches") => {
+                            self.parse_triangle_patch_array()?
+                        }
+                        (
+                            Bound(GML31_NS),
+                            b"stopLines" | b"breakLines" | b"maxLength" | b"controlPoint",
+                        ) => {
+                            let name = start.name().as_ref().to_vec();
+                            self.reader
+                                .read_to_end_into(QName(&name), &mut self.state.buf1)?;
+                        }
+                        _ => {
+                            return Err(ParseError::SchemaViolation(format!(
+                                "Unexpected element <{}> in TriangulatedSurface/Tin",
+                                String::from_utf8_lossy(localname.as_ref())
+                            )))
+                        }
+                    }
+                }
+                Ok(Event::End(_)) => return Ok(()),
+                Ok(Event::Text(_)) => {
+                    return Err(ParseError::SchemaViolation(
+                        "Unexpected text content".into(),
+                    ))
+                }
+                Ok(_) => (),
+                Err(e) => return Err(e.into()),
+            }
         }
-        Ok(())
     }
 
     fn parse_triangle_patch_array(&mut self) -> Result<(), ParseError> {
@@ -1729,16 +1705,37 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         }
     }
 
-    fn parse_linestring(&mut self) -> Result<(), ParseError> {
+    fn parse_linestring(&mut self, sink: &mut CurveSink) -> Result<(), ParseError> {
+        self.parse_pos_list_element()?;
+        let coords = self.state.fp_buf.as_chunks::<3>().0;
+        match sink {
+            CurveSink::LineStrings => {
+                if !coords.is_empty() {
+                    self.state
+                        .geometry_collector
+                        .add_linestring(coords.iter().copied());
+                }
+            }
+            CurveSink::Ring(ring) => append_to_ring(ring, coords)?,
+        }
+        Ok(())
+    }
+
+    /// Parses the content of an element that holds a single <gml:posList>
+    /// (e.g. LineString, LineStringSegment, LinearRing) into `self.state.fp_buf`.
+    fn parse_pos_list_element(&mut self) -> Result<(), ParseError> {
+        self.state.fp_buf.clear();
         let mut depth = 1;
         loop {
             match self.reader.read_resolved_event_into(&mut self.state.buf1) {
-                Ok((Bound(GML31_NS), Event::Start(_))) => {
+                Ok((Bound(GML31_NS), Event::Start(start)))
+                    if depth == 1 && start.local_name().as_ref() == b"posList" =>
+                {
                     depth += 1;
                 }
                 Ok((_, Event::Start(start))) => {
                     return Err(ParseError::SchemaViolation(format!(
-                        "Only GML elements are allowed but found <{}>",
+                        "Expected <posList> but found <{}>",
                         String::from_utf8_lossy(start.name().as_ref())
                     )));
                 }
@@ -1749,29 +1746,21 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     }
                 }
                 Ok((_, Event::Text(text))) => {
-                    // check poslist
                     if depth != 2 {
                         return Err(ParseError::SchemaViolation(format!(
                             "Unexpected text content: {:?}",
                             text
                         )));
                     }
-                    // parse coordinate sequence
-                    self.state.fp_buf.clear();
                     let unescaped_text = text
                         .unescape()
                         .map_err(|e| ParseError::InvalidValue(format!("Unescape error: {e}")))?;
                     Self::parse_pos_list(&unescaped_text, &mut self.state.fp_buf)?;
-
                     if !self.state.fp_buf.len().is_multiple_of(3) {
                         return Err(ParseError::InvalidValue(
                             "Length of coordinate numbers must be multiple of 3".into(),
                         ));
                     }
-
-                    let iter = self.state.fp_buf.as_chunks::<3>().0.iter().copied();
-
-                    self.state.geometry_collector.add_linestring(iter);
                 }
                 Ok(_) => (),
                 Err(e) => return Err(e.into()),
@@ -1821,57 +1810,84 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
     }
 
     fn parse_polygon(&mut self) -> Result<(), ParseError> {
-        let mut depth = 1;
-        let mut expect_exterior = true;
-        let mut is_exterior = true;
-        let mut ring_id = None;
+        let mut seen_exterior = false;
         loop {
             match self.reader.read_resolved_event_into(&mut self.state.buf1) {
                 Ok((Bound(GML31_NS), Event::Start(start))) => {
-                    depth += 1;
-                    match (depth, start.local_name().as_ref()) {
-                        (2, b"exterior") => {
-                            if expect_exterior {
-                                expect_exterior = false;
-                            } else {
-                                return Err(ParseError::SchemaViolation(
-                                    "Exterior ring is expected only once".into(),
-                                ));
-                            }
+                    let is_exterior = match start.local_name().as_ref() {
+                        b"exterior" if seen_exterior => {
+                            return Err(ParseError::SchemaViolation(
+                                "Exterior ring is expected only once".into(),
+                            ));
                         }
-                        (2, b"interior") => {
-                            is_exterior = false;
-                            if expect_exterior {
-                                return Err(ParseError::SchemaViolation(
-                                    "Exterior ring is expected before interior".into(),
-                                ));
-                            }
+                        b"exterior" => {
+                            seen_exterior = true;
+                            true
                         }
-                        (2, _) => {
+                        b"interior" if !seen_exterior => {
+                            return Err(ParseError::SchemaViolation(
+                                "Exterior ring is expected before interior".into(),
+                            ));
+                        }
+                        b"interior" => false,
+                        _ => {
                             return Err(ParseError::SchemaViolation(format!(
                                 "Expected <exterior> or <interior> but found <{}>",
                                 String::from_utf8_lossy(start.name().as_ref())
                             )));
                         }
-                        (3, b"LinearRing") => {
-                            ring_id = extract_gmlid(&start, self.reader);
+                    };
+                    self.parse_polygon_boundary(is_exterior)?;
+                }
+                Ok((_, Event::Start(start))) => {
+                    return Err(ParseError::SchemaViolation(format!(
+                        "Only GML elements are allowed but found <{}>",
+                        String::from_utf8_lossy(start.name().as_ref())
+                    )));
+                }
+                Ok((_, Event::End(_))) => return Ok(()),
+                Ok((_, Event::Text(_))) => {
+                    return Err(ParseError::SchemaViolation(
+                        "Unexpected text content".into(),
+                    ));
+                }
+                Ok(_) => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+
+    /// Parses the content of <gml:exterior> or <gml:interior> and adds its ring to the collector
+    fn parse_polygon_boundary(&mut self, is_exterior: bool) -> Result<(), ParseError> {
+        loop {
+            match self.reader.read_resolved_event_into(&mut self.state.buf1) {
+                Ok((Bound(GML31_NS), Event::Start(start))) => {
+                    let ring_id = extract_gmlid(&start, self.reader);
+                    match start.local_name().as_ref() {
+                        b"LinearRing" => {
+                            self.parse_pos_list_element()?;
+                            if !self.state.fp_buf.is_empty() {
+                                let coords = self.state.fp_buf.as_chunks::<3>().0.iter().copied();
+                                add_ring(
+                                    &mut self.state.geometry_collector,
+                                    is_exterior,
+                                    coords,
+                                    ring_id,
+                                );
+                            }
                         }
-                        (3, _) => {
-                            return Err(ParseError::SchemaViolation(format!(
-                                "Expected <LinearRing> but found <{}>",
-                                String::from_utf8_lossy(start.name().as_ref())
-                            )));
-                        }
-                        (4, b"posList") => (),
-                        (4, _) => {
-                            return Err(ParseError::SchemaViolation(format!(
-                                "Expected <posList> but found <{}>",
-                                String::from_utf8_lossy(start.name().as_ref())
-                            )));
+                        b"Ring" => {
+                            let ring = self.parse_ring()?;
+                            add_ring(
+                                &mut self.state.geometry_collector,
+                                is_exterior,
+                                ring,
+                                ring_id,
+                            );
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Coordinate sequence text is expected but found <{}>",
+                                "Expected <LinearRing> or <Ring> but found <{}>",
                                 String::from_utf8_lossy(start.name().as_ref())
                             )));
                         }
@@ -1883,50 +1899,61 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                         String::from_utf8_lossy(start.name().as_ref())
                     )));
                 }
-                Ok((_, Event::End(_))) => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Ok(());
-                    }
-                }
-                Ok((_, Event::Text(text))) => {
-                    if depth != 4 {
-                        return Err(ParseError::SchemaViolation(
-                            "Unexpected text content".into(),
-                        ));
-                    }
-
-                    // parse coordinate sequence
-                    self.state.fp_buf.clear();
-                    let unescaped_text = text
-                        .unescape()
-                        .map_err(|e| ParseError::InvalidValue(format!("Unescape error: {e}")))?;
-                    Self::parse_pos_list(&unescaped_text, &mut self.state.fp_buf)?;
-
-                    if !self.state.fp_buf.len().is_multiple_of(3) {
-                        return Err(ParseError::InvalidValue(
-                            "Length of coordinate numbers must be multiple of 3".into(),
-                        ));
-                    }
-
-                    let iter = self.state.fp_buf.as_chunks::<3>().0.iter().copied();
-
-                    if is_exterior {
-                        // add a new polygon
-                        self.state
-                            .geometry_collector
-                            .add_exterior_ring(iter, ring_id.take());
-                    } else {
-                        // append an interior ring
-                        self.state
-                            .geometry_collector
-                            .add_interior_ring(iter, ring_id.take());
-                    }
+                Ok((_, Event::End(_))) => return Ok(()),
+                Ok((_, Event::Text(_))) => {
+                    return Err(ParseError::SchemaViolation(
+                        "Unexpected text content".into(),
+                    ));
                 }
                 Ok(_) => (),
                 Err(e) => return Err(e.into()),
             }
         }
+    }
+
+    /// Parses the content of <gml:Ring> into a closed coordinate sequence
+    ///
+    /// The curve members (LineString, or Curve made of LineStringSegments) are
+    /// concatenated. Each member must start where the previous one ended; the
+    /// duplicated joint point is dropped.
+    fn parse_ring(&mut self) -> Result<Vec<[f64; 3]>, ParseError> {
+        let mut ring: Vec<[f64; 3]> = Vec::new();
+        loop {
+            match self.reader.read_resolved_event_into(&mut self.state.buf1) {
+                Ok((Bound(GML31_NS), Event::Start(start)))
+                    if start.local_name().as_ref() == b"curveMember" =>
+                {
+                    let len = ring.len();
+                    self.parse_curve_member(&mut CurveSink::Ring(&mut ring))?;
+                    if ring.len() == len {
+                        return Err(ParseError::SchemaViolation(
+                            "curveMember in Ring must contain an inline curve".into(),
+                        ));
+                    }
+                }
+                Ok((_, Event::Start(start))) => {
+                    return Err(ParseError::SchemaViolation(format!(
+                        "Expected <curveMember> in Ring but found <{}>",
+                        String::from_utf8_lossy(start.name().as_ref())
+                    )));
+                }
+                Ok((_, Event::End(_))) => break,
+                Ok((_, Event::Text(_))) => {
+                    return Err(ParseError::SchemaViolation(
+                        "Unexpected text content".into(),
+                    ));
+                }
+                Ok(_) => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        if ring.first() != ring.last() || ring.len() < 4 {
+            return Err(ParseError::InvalidValue(
+                "Ring must be closed and have at least 4 points".into(),
+            ));
+        }
+        Ok(ring)
     }
 
     /// Parses <app:target> of ParameterizedTexture
@@ -2139,6 +2166,44 @@ fn extract_xlink_href(
     None
 }
 
+/// Destination of the coordinates of parsed curves
+enum CurveSink<'a> {
+    /// Each curve is added to the geometry collector as a linestring
+    LineStrings,
+    /// Curves are concatenated into a single ring
+    Ring(&'a mut Vec<[f64; 3]>),
+}
+
+/// Appends a curve to a ring being built. The curve must start where the ring ends.
+fn append_to_ring(ring: &mut Vec<[f64; 3]>, coords: &[[f64; 3]]) -> Result<(), ParseError> {
+    let mut coords = coords.iter().copied();
+    if let Some(last) = ring.last().copied() {
+        let first = coords.next();
+        if first != Some(last) {
+            return Err(ParseError::InvalidValue(format!(
+                "Curve members of Ring are not connected: {last:?} -> {first:?}"
+            )));
+        }
+    }
+    ring.extend(coords);
+    Ok(())
+}
+
+fn add_ring(
+    collector: &mut GeometryCollector,
+    is_exterior: bool,
+    ring: impl IntoIterator<Item = [f64; 3]>,
+    ring_id: Option<LocalId>,
+) {
+    if is_exterior {
+        // add a new polygon
+        collector.add_exterior_ring(ring, ring_id);
+    } else {
+        // append an interior ring
+        collector.add_interior_ring(ring, ring_id);
+    }
+}
+
 fn expect_start<R: BufRead>(
     reader: &mut NsReader<R>,
     buf: &mut Vec<u8>,
@@ -2295,7 +2360,7 @@ mod tests {
             </gml:LineString>
         "#,
             |sr| {
-                sr.parse_linestring()
+                sr.parse_linestring(&mut CurveSink::LineStrings)
                     .expect("Should parse valid linestring");
             },
         );
@@ -2310,7 +2375,8 @@ mod tests {
             </gml:LineString>
         "#,
             |sr| {
-                sr.parse_linestring().expect_err("Should fail with NaN");
+                sr.parse_linestring(&mut CurveSink::LineStrings)
+                    .expect_err("Should fail with NaN");
             },
         );
     }
@@ -2331,6 +2397,286 @@ mod tests {
                 sr.parse_polygon().expect("Should parse valid polygon");
             },
         );
+    }
+
+    #[test]
+    fn parse_polygon_with_ring() {
+        // An interior gml:Ring made of a LineString and a Curve that join at (1 1 0) and (2 1 0)
+        parse(
+            r#"
+            <gml:Polygon xmlns:gml="http://www.opengis.net/gml">
+                <gml:exterior>
+                    <gml:LinearRing>
+                        <gml:posList>0 0 0 3 0 0 3 3 0 0 3 0 0 0 0</gml:posList>
+                    </gml:LinearRing>
+                </gml:exterior>
+                <gml:interior>
+                    <gml:Ring gml:id="ring1">
+                        <gml:curveMember>
+                            <gml:LineString>
+                                <gml:posList>1 1 0 1 2 0 2 2 0</gml:posList>
+                            </gml:LineString>
+                        </gml:curveMember>
+                        <gml:curveMember>
+                            <gml:Curve>
+                                <gml:segments>
+                                    <gml:LineStringSegment>
+                                        <gml:posList>2 2 0 2 1 0</gml:posList>
+                                    </gml:LineStringSegment>
+                                    <gml:LineStringSegment>
+                                        <gml:posList>2 1 0 1 1 0</gml:posList>
+                                    </gml:LineStringSegment>
+                                </gml:segments>
+                            </gml:Curve>
+                        </gml:curveMember>
+                    </gml:Ring>
+                </gml:interior>
+            </gml:Polygon>
+        "#,
+            |sr| {
+                sr.parse_polygon().expect("Should parse polygon with Ring");
+                let geometries = sr.collect_geometries(None);
+                assert_eq!(geometries.multipolygon.len(), 1);
+                let poly = geometries.multipolygon.get(0);
+                assert_eq!(poly.exterior().len(), 4);
+                let interiors: Vec<_> = poly.interiors().collect();
+                assert_eq!(interiors.len(), 1);
+                // the closing point is dropped by the collector
+                let hole: Vec<[f64; 3]> = interiors[0]
+                    .iter()
+                    .map(|i| geometries.vertices[i as usize])
+                    .collect();
+                assert_eq!(
+                    hole,
+                    vec![[1., 1., 0.], [1., 2., 0.], [2., 2., 0.], [2., 1., 0.]]
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn parse_polygon_with_disconnected_ring() {
+        parse(
+            r#"
+            <gml:Polygon xmlns:gml="http://www.opengis.net/gml">
+                <gml:exterior>
+                    <gml:Ring>
+                        <gml:curveMember>
+                            <gml:LineString>
+                                <gml:posList>0 0 0 1 0 0 1 1 0</gml:posList>
+                            </gml:LineString>
+                        </gml:curveMember>
+                        <gml:curveMember>
+                            <gml:LineString>
+                                <gml:posList>1 2 0 0 1 0 0 0 0</gml:posList>
+                            </gml:LineString>
+                        </gml:curveMember>
+                    </gml:Ring>
+                </gml:exterior>
+            </gml:Polygon>
+        "#,
+            |sr| {
+                let err = sr
+                    .parse_polygon()
+                    .expect_err("Should fail with disconnected curve members");
+                assert!(format!("{err:?}").contains("not connected"), "{err:?}");
+            },
+        );
+    }
+
+    #[test]
+    fn parse_polygon_with_unclosed_ring() {
+        parse(
+            r#"
+            <gml:Polygon xmlns:gml="http://www.opengis.net/gml">
+                <gml:exterior>
+                    <gml:Ring>
+                        <gml:curveMember>
+                            <gml:LineString>
+                                <gml:posList>0 0 0 1 0 0 1 1 0 0 1 0</gml:posList>
+                            </gml:LineString>
+                        </gml:curveMember>
+                    </gml:Ring>
+                </gml:exterior>
+            </gml:Polygon>
+        "#,
+            |sr| {
+                let err = sr
+                    .parse_polygon()
+                    .expect_err("Should fail with an unclosed ring");
+                assert!(format!("{err:?}").contains("must be closed"), "{err:?}");
+            },
+        );
+    }
+
+    #[test]
+    fn parse_polygon_with_ring_href_member() {
+        parse(
+            r##"
+            <gml:Polygon xmlns:gml="http://www.opengis.net/gml" xmlns:xlink="http://www.w3.org/1999/xlink">
+                <gml:exterior>
+                    <gml:Ring>
+                        <gml:curveMember xlink:href="#curve1"/>
+                    </gml:Ring>
+                </gml:exterior>
+            </gml:Polygon>
+        "##,
+            |sr| {
+                let err = sr
+                    .parse_polygon()
+                    .expect_err("Should fail with a curveMember by reference");
+                assert!(format!("{err:?}").contains("inline curve"), "{err:?}");
+            },
+        );
+    }
+
+    #[test]
+    fn parse_solid_with_triangulated_surface() {
+        parse(
+            r#"
+            <gml:Solid xmlns:gml="http://www.opengis.net/gml">
+                <gml:exterior>
+                    <gml:TriangulatedSurface>
+                        <gml:trianglePatches>
+                            <gml:Triangle>
+                                <gml:exterior>
+                                    <gml:LinearRing>
+                                        <gml:posList>0 0 0 1 0 0 0 1 0 0 0 0</gml:posList>
+                                    </gml:LinearRing>
+                                </gml:exterior>
+                            </gml:Triangle>
+                            <gml:Triangle>
+                                <gml:exterior>
+                                    <gml:LinearRing>
+                                        <gml:posList>1 0 0 1 1 0 0 1 0 1 0 0</gml:posList>
+                                    </gml:LinearRing>
+                                </gml:exterior>
+                            </gml:Triangle>
+                        </gml:trianglePatches>
+                    </gml:TriangulatedSurface>
+                </gml:exterior>
+            </gml:Solid>
+        "#,
+            |sr| {
+                sr.parse_solid()
+                    .expect("Should parse Solid with TriangulatedSurface");
+                let geometries = sr.collect_geometries(None);
+                assert_eq!(geometries.multipolygon.len(), 2);
+            },
+        );
+    }
+
+    #[test]
+    fn parse_geometry_prop_with_triangulated_surface() {
+        parse(
+            r#"
+            <bldg:lod1Geometry xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
+                <gml:TriangulatedSurface>
+                    <gml:trianglePatches>
+                        <gml:Triangle>
+                            <gml:exterior>
+                                <gml:LinearRing>
+                                    <gml:posList>0 0 0 1 0 0 0 1 0 0 0 0</gml:posList>
+                                </gml:LinearRing>
+                            </gml:exterior>
+                        </gml:Triangle>
+                    </gml:trianglePatches>
+                </gml:TriangulatedSurface>
+            </bldg:lod1Geometry>
+        "#,
+            |sr| {
+                let mut geomrefs = GeometryRefs::new();
+                sr.parse_geometry_prop(&mut geomrefs, 1, None, None, None)
+                    .expect("Should parse TriangulatedSurface in a geometry property");
+                assert_eq!(geomrefs.len(), 1);
+                assert_eq!(geomrefs[0].ty, GeometryType::Triangle);
+                assert_eq!(geomrefs[0].len, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn parse_tin_with_trailing_elements() {
+        // gml:Tin has stopLines, breakLines, maxLength and controlPoint after trianglePatches
+        parse(
+            r#"
+            <gml:Solid xmlns:gml="http://www.opengis.net/gml">
+                <gml:exterior>
+                    <gml:Tin>
+                        <gml:trianglePatches>
+                            <gml:Triangle>
+                                <gml:exterior>
+                                    <gml:LinearRing>
+                                        <gml:posList>0 0 0 1 0 0 0 1 0 0 0 0</gml:posList>
+                                    </gml:LinearRing>
+                                </gml:exterior>
+                            </gml:Triangle>
+                        </gml:trianglePatches>
+                        <gml:stopLines>
+                            <gml:LineStringSegment>
+                                <gml:posList>0 0 0 1 0 0</gml:posList>
+                            </gml:LineStringSegment>
+                        </gml:stopLines>
+                        <gml:breakLines>
+                            <gml:LineStringSegment>
+                                <gml:posList>0 0 0 0 1 0</gml:posList>
+                            </gml:LineStringSegment>
+                        </gml:breakLines>
+                        <gml:maxLength uom="m">10</gml:maxLength>
+                        <gml:controlPoint>
+                            <gml:posList>0 0 0 1 0 0 0 1 0</gml:posList>
+                        </gml:controlPoint>
+                    </gml:Tin>
+                </gml:exterior>
+            </gml:Solid>
+        "#,
+            |sr| {
+                sr.parse_solid()
+                    .expect("Should parse Solid with Tin having trailing elements");
+                let geometries = sr.collect_geometries(None);
+                assert_eq!(geometries.multipolygon.len(), 1);
+            },
+        );
+    }
+
+    #[test]
+    fn parse_curve_prop_accepts_only_its_curve_type() {
+        for (curve, composite) in [
+            ("MultiCurve", false),
+            ("CompositeCurve", true),
+            ("MultiCurve", true),
+            ("CompositeCurve", false),
+        ] {
+            let expected = composite == (curve == "CompositeCurve");
+            let doc = format!(
+                r#"
+                <uro:lod2Network xmlns:gml="http://www.opengis.net/gml" xmlns:uro="https://www.geospatial.jp/iur/uro/3.1">
+                    <gml:{curve} gml:id="c1">
+                        <gml:curveMember>
+                            <gml:LineString>
+                                <gml:posList>0 0 0 1 0 0</gml:posList>
+                            </gml:LineString>
+                        </gml:curveMember>
+                    </gml:{curve}>
+                </uro:lod2Network>
+            "#
+            );
+            parse(&doc, |sr| {
+                let mut geomrefs = GeometryRefs::new();
+                let result = sr.parse_curve_prop(&mut geomrefs, 2, None, None, None, composite);
+                if !expected {
+                    assert!(
+                        result.is_err(),
+                        "Should reject {curve} (composite: {composite})"
+                    );
+                    return;
+                }
+                result.unwrap_or_else(|e| panic!("Should parse {curve}: {e:?}"));
+                assert_eq!(geomrefs.len(), 1);
+                assert_eq!(geomrefs[0].ty, GeometryType::Curve);
+                assert_eq!(geomrefs[0].id, Some(LocalId::new("c1")));
+            });
+        }
     }
 
     #[test]
@@ -2365,7 +2711,7 @@ mod tests {
             </gml:curveMembers>
         "#,
             |sr| {
-                sr.parse_curve_members()
+                sr.parse_curve_members(&mut CurveSink::LineStrings)
                     .expect("Should parse curveMembers with LineStrings");
                 let geometries = sr.collect_geometries(None);
                 assert_eq!(geometries.multilinestring.len(), 2);
@@ -2461,7 +2807,7 @@ mod tests {
             </gml:curveMembers>
         "#,
             |sr| {
-                sr.parse_curve_members()
+                sr.parse_curve_members(&mut CurveSink::LineStrings)
                     .expect("Should parse curveMembers with Curves");
                 let geometries = sr.collect_geometries(None);
                 assert_eq!(geometries.multilinestring.len(), 2);
