@@ -515,10 +515,11 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
             } // FIXME
             Point => todo!(),      // FIXME
             MultiPoint => todo!(), // FIXME
-            // Both encodings appear for the same properties in real data (e.g.
-            // uro:RailwayTrackAttribute lod2Network), so accept either.
-            MultiCurve | CompositeCurve => {
-                self.parse_curve_prop(geomref, lod, feature_id, feature_type, property_name)?
+            MultiCurve => {
+                self.parse_curve_prop(geomref, lod, feature_id, feature_type, property_name, false)?
+            }
+            CompositeCurve => {
+                self.parse_curve_prop(geomref, lod, feature_id, feature_type, property_name, true)?
             }
         }
 
@@ -536,6 +537,7 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         feature_id: Option<String>,
         feature_type: Option<String>,
         property_name: Option<PropertyType>,
+        composite: bool,
     ) -> Result<(), ParseError> {
         loop {
             match self.reader.read_event_into(&mut self.state.buf1) {
@@ -547,27 +549,28 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                     let gml_geometry_type = GmlGeometryType::maybe_from_str(
                         &String::from_utf8_lossy(localname.as_ref()),
                     );
-                    let geomtype = match (nsres, localname.as_ref()) {
-                        (Bound(GML31_NS), b"MultiCurve") => {
-                            self.parse_multi_curve()?;
-                            GeometryType::Curve
-                        }
-                        (Bound(GML31_NS), b"CompositeCurve") => {
-                            self.parse_composite_curve()?;
-                            GeometryType::Curve
+                    match (nsres, localname.as_ref(), composite) {
+                        (Bound(GML31_NS), b"MultiCurve", false) => self.parse_multi_curve()?,
+                        (Bound(GML31_NS), b"CompositeCurve", true) => {
+                            self.parse_composite_curve()?
                         }
                         _ => {
                             return Err(ParseError::SchemaViolation(format!(
-                                "Expected MultiCurve or CompositeCurve but found <{}>",
+                                "Expected {} but found <{}>",
+                                if composite {
+                                    "CompositeCurve"
+                                } else {
+                                    "MultiCurve"
+                                },
                                 String::from_utf8_lossy(start.name().as_ref())
                             )))
                         }
-                    };
+                    }
 
                     let line_end = self.state.geometry_collector.multilinestring.len();
                     if line_end - line_begin > 0 {
                         geomrefs.push(GeometryRef {
-                            ty: geomtype,
+                            ty: GeometryType::Curve,
                             property_name,
                             gml_geometry_type,
                             lod,
@@ -2629,8 +2632,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_curve_prop_accepts_multi_and_composite_curve() {
-        for curve in ["MultiCurve", "CompositeCurve"] {
+    fn parse_curve_prop_accepts_only_its_curve_type() {
+        for (curve, composite) in [
+            ("MultiCurve", false),
+            ("CompositeCurve", true),
+            ("MultiCurve", true),
+            ("CompositeCurve", false),
+        ] {
+            let expected = composite == (curve == "CompositeCurve");
             let doc = format!(
                 r#"
                 <uro:lod2Network xmlns:gml="http://www.opengis.net/gml" xmlns:uro="https://www.geospatial.jp/iur/uro/3.1">
@@ -2646,8 +2655,15 @@ mod tests {
             );
             parse(&doc, |sr| {
                 let mut geomrefs = GeometryRefs::new();
-                sr.parse_curve_prop(&mut geomrefs, 2, None, None, None)
-                    .unwrap_or_else(|e| panic!("Should parse {curve}: {e:?}"));
+                let result = sr.parse_curve_prop(&mut geomrefs, 2, None, None, None, composite);
+                if !expected {
+                    assert!(
+                        result.is_err(),
+                        "Should reject {curve} (composite: {composite})"
+                    );
+                    return;
+                }
+                result.unwrap_or_else(|e| panic!("Should parse {curve}: {e:?}"));
                 assert_eq!(geomrefs.len(), 1);
                 assert_eq!(geomrefs[0].ty, GeometryType::Curve);
                 assert_eq!(geomrefs[0].id, Some(LocalId::new("c1")));
