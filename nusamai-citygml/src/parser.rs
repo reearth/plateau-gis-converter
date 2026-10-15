@@ -14,8 +14,8 @@ use crate::{
     appearance::{TexCoordList, TextureAssociation},
     codelist::{self, CodeResolver},
     geometry::{
-        GeometryCollector, GeometryParseType, GeometryRef, GeometryRefs, GeometryStore,
-        GeometryType, GmlGeometryType, PropertyType,
+        GeometryCollector, GeometryCollectorSnapshot, GeometryParseType, GeometryRef, GeometryRefs,
+        GeometryStore, GeometryType, GmlGeometryType, PropertyType,
     },
     namespace::{wellknown_prefix_from_nsres, APP_2_NS, GML31_NS},
     CityGmlAttribute, LocalId, SurfaceSpan, XLINK_NS,
@@ -40,6 +40,16 @@ pub enum ParseError {
     CodelistError(String),
     #[error("canceled")]
     Canceled,
+}
+
+impl ParseError {
+    /// Whether parsing can continue after skipping the element that caused this error
+    pub fn is_recoverable(&self) -> bool {
+        matches!(
+            self,
+            Self::SchemaViolation(_) | Self::InvalidValue(_) | Self::CodelistError(_)
+        )
+    }
 }
 
 pub struct CityGmlReader<'a> {
@@ -95,6 +105,7 @@ impl<'a> InternalState<'a> {
 pub struct ParseContext<'a> {
     source_uri: Url,
     code_resolver: &'a dyn CodeResolver,
+    lenient: bool,
 }
 
 impl<'a> ParseContext<'a> {
@@ -102,7 +113,22 @@ impl<'a> ParseContext<'a> {
         Self {
             source_uri,
             code_resolver,
+            lenient: true,
         }
+    }
+
+    /// In lenient mode, a property that fails to parse (e.g. an unknown element,
+    /// an invalid value or a broken geometry) is skipped with a warning instead of
+    /// failing the whole parse. Broken XML is still an error.
+    ///
+    /// Lenient mode is the default. Pass `false` to fail on the first error.
+    pub fn with_lenient(mut self, lenient: bool) -> Self {
+        self.lenient = lenient;
+        self
+    }
+
+    pub fn lenient(&self) -> bool {
+        self.lenient
     }
 
     pub fn source_url(&self) -> &Url {
@@ -119,6 +145,7 @@ impl Default for ParseContext<'_> {
         Self {
             source_uri: Url::parse("file:///").unwrap(),
             code_resolver: &codelist::NoopResolver {},
+            lenient: true,
         }
     }
 }
@@ -161,6 +188,16 @@ impl<'a> CityGmlReader<'a> {
             }
         }
     }
+}
+
+/// State at the start of a property element, used to skip it in lenient mode
+#[doc(hidden)]
+pub struct RecoveryPoint {
+    depth: usize,
+    name: Vec<u8>,
+    path: Vec<u8>,
+    geometry: GeometryCollectorSnapshot,
+    feature_hrefs: usize,
 }
 
 pub struct SubTreeReader<'a, 'b, R> {
@@ -402,6 +439,85 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         std::mem::take(&mut self.state.pending_feature_hrefs)
     }
 
+    /// Records the state at the start of the current property element, so that
+    /// the property can be skipped if it fails to parse. Returns `None` unless the
+    /// context is lenient.
+    #[doc(hidden)]
+    pub fn recovery_point(&self) -> Option<RecoveryPoint> {
+        if !self.state.context.lenient {
+            return None;
+        }
+        let start = self.state.current_start.as_ref()?;
+        Some(RecoveryPoint {
+            depth: self.state.path_stack_indices.len(),
+            name: start.name().as_ref().to_vec(),
+            path: self.state.path_buf.clone(),
+            geometry: self.state.geometry_collector.snapshot(),
+            feature_hrefs: self.state.pending_feature_hrefs.len(),
+        })
+    }
+
+    /// Passes `result` through, unless it is a recoverable error and `point` is set
+    /// (lenient mode). Then it skips the rest of the property element, restores the
+    /// state recorded in `point`, logs a warning and returns `Ok(())`.
+    #[doc(hidden)]
+    pub fn recover(
+        &mut self,
+        point: Option<RecoveryPoint>,
+        result: Result<(), ParseError>,
+    ) -> Result<(), ParseError> {
+        let (Err(err), Some(point)) = (&result, point) else {
+            return result;
+        };
+        if !err.is_recoverable() {
+            return result;
+        }
+
+        // The property element is still open unless the error was raised after its end tag
+        if self.state.path_stack_indices.len() >= point.depth {
+            // Elements with the same name as the property may still be open inside it
+            // (e.g. nested gen:genericAttributeSet). Each of them needs its own end tag.
+            let path_buf = &self.state.path_buf;
+            let starts = &self.state.path_stack_indices[point.depth - 1..];
+            let ends = starts.iter().skip(1).copied().chain([path_buf.len()]);
+            // "/{ns_prefix}:{localname}", optionally followed by "[{attributes}]"
+            let name_of =
+                |start: usize, end: usize| path_buf[start + 1..end].split(|&c| c == b'[').next();
+            let property_name = name_of(starts[0], ends.clone().next().unwrap());
+            let open = starts
+                .iter()
+                .zip(ends)
+                .filter(|&(&start, end)| name_of(start, end) == property_name)
+                .count();
+            for _ in 0..open {
+                self.reader
+                    .read_to_end_into(QName(&point.name), &mut self.state.buf1)?;
+            }
+            self.state
+                .path_buf
+                .truncate(self.state.path_stack_indices[point.depth - 1]);
+            self.state.path_stack_indices.truncate(point.depth - 1);
+        }
+        self.state
+            .feature_stack
+            .retain(|(_, _, depth)| *depth < point.depth);
+        self.state.current_start = None;
+        self.state.geometry_collector.rollback(&point.geometry);
+        self.state
+            .pending_feature_hrefs
+            .truncate(point.feature_hrefs);
+
+        log::warn!(
+            "Skipped {} (feature {:?}): {err}",
+            String::from_utf8_lossy(&point.path),
+            self.state
+                .feature_stack
+                .last()
+                .map(|(id, _, _)| id.as_str()),
+        );
+        Ok(())
+    }
+
     pub fn collect_geometries(&mut self, envelope_crs_uri: Option<String>) -> GeometryStore {
         let collector = std::mem::take(&mut self.state.geometry_collector);
         collector.into_geometries(envelope_crs_uri)
@@ -486,6 +602,22 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
     /// Expect a geometric attribute of CityGML
     #[inline(never)]
     pub fn parse_geometric_attr(
+        &mut self,
+        geomref: &mut GeometryRefs,
+        lod: u8,
+        geomtype: GeometryParseType,
+    ) -> Result<(), ParseError> {
+        // On failure, drop the refs added so far, as their geometries are rolled back
+        // in lenient mode
+        let len = geomref.len();
+        let result = self.parse_geometric_attr_inner(geomref, lod, geomtype);
+        if result.is_err() {
+            geomref.truncate(len);
+        }
+        result
+    }
+
+    fn parse_geometric_attr_inner(
         &mut self,
         geomref: &mut GeometryRefs,
         lod: u8,

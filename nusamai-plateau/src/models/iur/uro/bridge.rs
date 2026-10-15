@@ -53,6 +53,10 @@ pub struct ConstructionBaseAttribute {
     #[citygml(path = b"uro:administrator")]
     pub administrator: Option<String>,
 
+    // The i-UR 3.0/3.1 schema spells it this way (fixed to "administrator" in 3.2)
+    #[citygml(path = b"uro:administorator")]
+    pub administorator: Option<String>,
+
     #[citygml(path = b"uro:adminOffice")]
     pub admin_office: Option<String>,
 

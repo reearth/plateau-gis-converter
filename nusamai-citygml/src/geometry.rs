@@ -505,7 +505,60 @@ pub(crate) struct GeometryCollector {
     pub(crate) pending_hrefs: Vec<(Option<Url>, LocalId, bool)>,
 }
 
+/// Sizes of the collections in a `GeometryCollector`, to roll back to
+pub(crate) struct GeometryCollectorSnapshot {
+    vertices: usize,
+    polygons: usize,
+    linestrings: usize,
+    points: usize,
+    ring_ids: usize,
+    surface_spans: usize,
+    pending_hrefs: usize,
+}
+
 impl GeometryCollector {
+    pub(crate) fn snapshot(&self) -> GeometryCollectorSnapshot {
+        GeometryCollectorSnapshot {
+            vertices: self.vertices.len(),
+            polygons: self.multipolygon.len(),
+            linestrings: self.multilinestring.len(),
+            points: self.multipoint.len(),
+            ring_ids: self.ring_ids.len(),
+            surface_spans: self.surface_spans.len(),
+            pending_hrefs: self.pending_hrefs.len(),
+        }
+    }
+
+    /// Removes everything added after `snapshot` was taken
+    pub(crate) fn rollback(&mut self, snapshot: &GeometryCollectorSnapshot) {
+        if self.multipolygon.len() > snapshot.polygons {
+            let mut multipolygon = MultiPolygon::new();
+            for poly in self.multipolygon.iter().take(snapshot.polygons) {
+                multipolygon.push(&poly);
+            }
+            self.multipolygon = multipolygon;
+        }
+        if self.multilinestring.len() > snapshot.linestrings {
+            let mut multilinestring = MultiLineString::new();
+            for ls in self.multilinestring.iter().take(snapshot.linestrings) {
+                multilinestring.add_linestring(ls.iter());
+            }
+            self.multilinestring = multilinestring;
+        }
+        if self.multipoint.len() > snapshot.points {
+            let mut multipoint = MultiPoint::new();
+            for point in self.multipoint.iter().take(snapshot.points) {
+                multipoint.push(point);
+            }
+            self.multipoint = multipoint;
+        }
+        // Vertices added after the snapshot are only used by the removed geometries
+        self.vertices.truncate(snapshot.vertices);
+        self.ring_ids.truncate(snapshot.ring_ids);
+        self.surface_spans.truncate(snapshot.surface_spans);
+        self.pending_hrefs.truncate(snapshot.pending_hrefs);
+    }
+
     pub fn add_exterior_ring(
         &mut self,
         iter: impl IntoIterator<Item = [f64; 3]>,

@@ -388,10 +388,13 @@ fn generate_citygml_impl_for_struct(
                 st.parse_children(move |st| {
                     let path: &[u8] = &st.current_path();
                     let hash = (path.iter().skip(#HASH_CHAR_SKIP).take(#HASH_CHAR_TAKE).fold(5381u32, |a, c| a.wrapping_mul(33) ^ *c as u32) & #HASH_MASK) as u8;
-                    match (hash, path) {
+                    // In lenient mode, a property that fails to parse is skipped
+                    let recovery_point = st.recovery_point();
+                    let result = match (hash, path) {
                         #(#child_arms)*
                         _ => #extra_arm,
-                    }
+                    };
+                    st.recover(recovery_point, result)
                 })
             }
 
