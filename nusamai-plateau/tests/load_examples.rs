@@ -735,6 +735,51 @@ fn load_urf_example() {
 // }
 
 #[test]
+fn load_waterbody_lod_surface_example() {
+    // wtr:lod2Surface/lod3Surface of the boundary surfaces hold a gml:CompositeSurface
+    // directly (gml:SurfacePropertyType), and lod2Solid/lod3Solid reference their polygons
+    let cityobjs =
+        load_cityobjs_from_zstd("./tests/data/takeshiba/udx/wtr/533936_wtr_6697_op.gml.zst");
+    assert_eq!(cityobjs.len(), 1);
+    let common::CityObject {
+        cityobj: mut obj,
+        geometries: store,
+    } = cityobjs.into_iter().next().unwrap();
+    let TopLevelCityObject::WaterBody(ref mut waterbody) = obj else {
+        panic!("Expected WaterBody")
+    };
+    assert_eq!(
+        waterbody.class.as_ref().and_then(|c| c.code()),
+        Some("1030")
+    );
+
+    use nusamai_plateau::models::waterbody::WaterBoundarySurfaceProperty as Wbsp;
+    assert_eq!(waterbody.bounded_by.len(), 6);
+    let surface_refs: Vec<_> = waterbody
+        .bounded_by
+        .iter()
+        .flat_map(|b| match b {
+            Wbsp::WaterSurface(s) => &s.geometries,
+            Wbsp::WaterGroundSurface(s) => &s.geometries,
+            Wbsp::WaterClosureSurface(s) => &s.geometries,
+            Wbsp::Unknown => panic!("unexpected boundary surface"),
+        })
+        .collect();
+    assert_eq!(surface_refs.iter().filter(|r| r.lod == 2).count(), 3);
+    assert_eq!(surface_refs.iter().filter(|r| r.lod == 3).count(), 3);
+    assert!(surface_refs.iter().all(|r| r.len > 0));
+
+    let mut lods: Vec<_> = waterbody.geometries.iter().map(|r| r.lod).collect();
+    lods.sort();
+    assert_eq!(lods, [0, 1, 2, 3]);
+    store.resolve_refs(&mut waterbody.geometries);
+    assert!(waterbody
+        .geometries
+        .iter()
+        .all(|r| r.unresolved_refs.is_empty()));
+}
+
+#[test]
 fn load_flood_example() {
     {
         let cityobjs = load_cityobjs(
