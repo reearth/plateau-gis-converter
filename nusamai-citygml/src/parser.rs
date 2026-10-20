@@ -889,10 +889,60 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
         feature_type: Option<String>,
         property_name: Option<PropertyType>,
     ) -> Result<(), ParseError> {
+        // gml:SurfacePropertyType: the surface is the direct child of the property
+        // (no gml:surfaceMember wrapper), so stop at the property's own end tag.
         let poly_begin = self.state.geometry_collector.multipolygon.len();
-        let surface_id = self.parse_surface_member()?;
+        let mut surface_id = None;
+        let mut seen_surface = false;
+        loop {
+            match self.reader.read_event_into(&mut self.state.buf1) {
+                Ok(Event::Start(start)) => {
+                    if seen_surface {
+                        return Err(ParseError::SchemaViolation(
+                            "Only one surface is expected in a surface property".into(),
+                        ));
+                    }
+                    seen_surface = true;
+                    surface_id = extract_gmlid(&start, self.reader);
+                    let (nsres, localname) = self.reader.resolve_element(start.name());
+                    match (nsres, localname.as_ref()) {
+                        (Bound(GML31_NS), b"Polygon") => self.parse_polygon()?,
+                        (Bound(GML31_NS), b"CompositeSurface") => {
+                            self.parse_composite_surface()?;
+                        }
+                        (Bound(GML31_NS), b"OrientableSurface") => {
+                            let flip = is_negative_orientation(&start);
+                            self.parse_orientable_surface(flip)?;
+                            // parse_orientable_surface() stops at </gml:baseSurface>
+                            expect_end(self.reader, &mut self.state.buf1)?;
+                        }
+                        (Bound(GML31_NS), b"Surface") => {
+                            self.parse_surface()?;
+                            // parse_surface() stops at </gml:patches>
+                            expect_end(self.reader, &mut self.state.buf1)?;
+                        }
+                        _ => {
+                            return Err(ParseError::SchemaViolation(format!(
+                                "Unexpected element <{}> by parsing surface property",
+                                String::from_utf8_lossy(localname.as_ref())
+                            )))
+                        }
+                    }
+                }
+                Ok(Event::End(_)) => break,
+                Ok(Event::Text(_)) => {
+                    return Err(ParseError::SchemaViolation(
+                        "Unexpected text content".into(),
+                    ))
+                }
+                Ok(_) => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+
         let poly_end = self.state.geometry_collector.multipolygon.len();
-        if poly_end - poly_begin > 0 {
+        let hrefs = std::mem::take(&mut self.state.geometry_collector.pending_hrefs);
+        if poly_end - poly_begin > 0 || !hrefs.is_empty() {
             geomrefs.push(GeometryRef {
                 ty: GeometryType::Surface,
                 property_name,
@@ -900,12 +950,25 @@ impl<'b, R: BufRead> SubTreeReader<'_, 'b, R> {
                 lod,
                 pos: poly_begin as u32,
                 len: (poly_end - poly_begin) as u32,
-                id: surface_id,
+                id: surface_id.clone(),
                 feature_id,
                 feature_type,
-                unresolved_refs: vec![],
+                unresolved_refs: hrefs,
                 resolved_ranges: vec![],
             });
+        }
+        // record a partial surface span
+        if let Some(id) = surface_id {
+            if poly_end > poly_begin {
+                self.state
+                    .geometry_collector
+                    .surface_spans
+                    .push(SurfaceSpan {
+                        id,
+                        start: poly_begin as u32,
+                        end: poly_end as u32,
+                    });
+            }
         }
         Ok(())
     }
@@ -2982,6 +3045,123 @@ mod tests {
             "parse succeeded but feature_stack was corrupted: \
              <sibling/> inherited stale feature_id={sibling_fid:?} \
              from the skipped cross-file href element"
+        );
+    }
+
+    #[test]
+    fn surface_prop_with_direct_composite_surface_stops_at_its_own_end_tag() {
+        // `lodNSurface` is a gml:SurfacePropertyType: the surface is its direct child,
+        // with no gml:surfaceMember wrapper. Shape taken from PLATEAU wtr data
+        // (wtr:WaterClosureSurface/wtr:lod2Surface/gml:CompositeSurface).
+        parse(
+            r##"
+            <root xmlns:gml="http://www.opengis.net/gml"
+                  xmlns:wtr="http://www.opengis.net/citygml/waterbody/2.0">
+                <wtr:lod2Surface>
+                    <gml:CompositeSurface>
+                        <gml:surfaceMember>
+                            <gml:Polygon gml:id="poly1">
+                                <gml:exterior>
+                                    <gml:LinearRing>
+                                        <gml:posList>0 0 0 1 0 0 1 1 0 0 0 0</gml:posList>
+                                    </gml:LinearRing>
+                                </gml:exterior>
+                            </gml:Polygon>
+                        </gml:surfaceMember>
+                    </gml:CompositeSurface>
+                </wtr:lod2Surface>
+                <wtr:next/>
+            </root>
+        "##,
+            |sr| {
+                let mut geomrefs: GeometryRefs = Vec::new();
+                let mut siblings = Vec::new();
+                sr.parse_children(|child| match child.current_path().as_slice() {
+                    b"wtr:lod2Surface" => {
+                        child.parse_geometric_attr(&mut geomrefs, 2, GeometryParseType::Surface)
+                    }
+                    other => {
+                        siblings.push(String::from_utf8_lossy(other).into_owned());
+                        child.skip_current_element()
+                    }
+                })
+                .expect("lod2Surface holding a CompositeSurface directly should parse");
+                assert_eq!(siblings, ["wtr:next"]);
+                assert_eq!(geomrefs.len(), 1);
+                assert_eq!(geomrefs[0].len, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn surface_prop_with_other_direct_surfaces_stops_at_its_own_end_tag() {
+        // Polygon, OrientableSurface (baseSurface by reference) and Surface, each as
+        // the direct child of a surface property. The latter two are left with their
+        // own end tag still open by their sub-parsers.
+        parse(
+            r##"
+            <root xmlns:gml="http://www.opengis.net/gml"
+                  xmlns:wtr="http://www.opengis.net/citygml/waterbody/2.0"
+                  xmlns:xlink="http://www.w3.org/1999/xlink">
+                <wtr:lod2Surface>
+                    <gml:Polygon gml:id="poly1">
+                        <gml:exterior>
+                            <gml:LinearRing>
+                                <gml:posList>0 0 0 1 0 0 1 1 0 0 0 0</gml:posList>
+                            </gml:LinearRing>
+                        </gml:exterior>
+                    </gml:Polygon>
+                </wtr:lod2Surface>
+                <wtr:lod2Surface>
+                    <gml:OrientableSurface orientation="-">
+                        <gml:baseSurface xlink:href="#poly1"/>
+                    </gml:OrientableSurface>
+                </wtr:lod2Surface>
+                <wtr:lod3Surface>
+                    <gml:Surface>
+                        <gml:patches>
+                            <gml:PolygonPatch>
+                                <gml:exterior>
+                                    <gml:LinearRing>
+                                        <gml:posList>0 0 0 1 0 0 1 1 0 0 0 0</gml:posList>
+                                    </gml:LinearRing>
+                                </gml:exterior>
+                            </gml:PolygonPatch>
+                        </gml:patches>
+                    </gml:Surface>
+                </wtr:lod3Surface>
+                <wtr:next/>
+            </root>
+        "##,
+            |sr| {
+                let mut geomrefs: GeometryRefs = Vec::new();
+                let mut siblings = Vec::new();
+                sr.parse_children(|child| match child.current_path().as_slice() {
+                    b"wtr:lod2Surface" => {
+                        child.parse_geometric_attr(&mut geomrefs, 2, GeometryParseType::Surface)
+                    }
+                    b"wtr:lod3Surface" => {
+                        child.parse_geometric_attr(&mut geomrefs, 3, GeometryParseType::Surface)
+                    }
+                    other => {
+                        siblings.push(String::from_utf8_lossy(other).into_owned());
+                        child.skip_current_element()
+                    }
+                })
+                .expect("surface properties holding a surface directly should parse");
+                assert_eq!(siblings, ["wtr:next"]);
+                assert_eq!(geomrefs.len(), 3);
+                // Polygon
+                assert_eq!((geomrefs[0].lod, geomrefs[0].len), (2, 1));
+                assert!(geomrefs[0].unresolved_refs.is_empty());
+                // OrientableSurface: no polygon of its own, only the reference
+                assert_eq!((geomrefs[1].lod, geomrefs[1].len), (2, 0));
+                assert_eq!(geomrefs[1].unresolved_refs.len(), 1);
+                assert!(geomrefs[1].unresolved_refs[0].2, "orientation=\"-\" flips");
+                // Surface
+                assert_eq!((geomrefs[2].lod, geomrefs[2].len), (3, 1));
+                assert!(geomrefs[2].unresolved_refs.is_empty());
+            },
         );
     }
 
