@@ -39,4 +39,6 @@ pub struct DependentLocality {
     locality_type: Option<String>,
     #[citygml(path = b"xAL:DependentLocalityName")]
     dependent_locality_name: Vec<String>,
+    #[citygml(path = b"xAL:DependentLocalityNumber")]
+    dependent_locality_number: Vec<String>,
 }

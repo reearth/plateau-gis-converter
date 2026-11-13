@@ -96,6 +96,43 @@ fn locality_names_and_district_are_kept() {
 }
 
 #[test]
+fn dependent_locality_number_is_kept() {
+    // Example from the official PLATEAU documentation
+    let address = parse_address(
+        r#"<xAL:Locality>
+            <xAL:LocalityName Type="prefecture">東京都</xAL:LocalityName>
+            <xAL:LocalityName Type="city">○○区</xAL:LocalityName>
+            <xAL:DependentLocality Type="district">
+                <xAL:DependentLocalityName>××</xAL:DependentLocalityName>
+                <xAL:DependentLocalityNumber>2-2-3</xAL:DependentLocalityNumber>
+            </xAL:DependentLocality>
+        </xAL:Locality>"#,
+    );
+    let locality = locality(&address);
+
+    assert_eq!(
+        strings(attr(locality, "xAL:LocalityName").expect("xAL:LocalityName")),
+        ["東京都", "○○区"]
+    );
+
+    let dependent = only(attr(locality, "xAL:DependentLocality").expect("xAL:DependentLocality"));
+    assert_eq!(
+        attr(dependent, "locality_type"),
+        Some(&Value::String("district".into()))
+    );
+    assert_eq!(
+        strings(attr(dependent, "xAL:DependentLocalityName").expect("xAL:DependentLocalityName")),
+        ["××"]
+    );
+    assert_eq!(
+        strings(
+            attr(dependent, "xAL:DependentLocalityNumber").expect("xAL:DependentLocalityNumber")
+        ),
+        ["2-2-3"]
+    );
+}
+
+#[test]
 fn single_locality_name_without_district() {
     let address = parse_address(
         r#"<xAL:Locality>
