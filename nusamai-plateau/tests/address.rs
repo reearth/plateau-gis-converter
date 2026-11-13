@@ -1,9 +1,7 @@
 //! `core:Address` / xAL parsing.
 //!
-//! `xAL:Locality` is an xAL complex type: it holds the `xAL:LocalityName`s and the
-//! `xAL:DependentLocality` (with its `Type` attribute and `xAL:DependentLocalityName`). The model
-//! must keep all of it; a consumer that builds a display address (e.g. prefecture + city + district)
-//! needs the district, and PLATEAU data such as Fukushima-shi carries it.
+//! `xAL:Locality` holds the `xAL:LocalityName`s and the `xAL:DependentLocality` (with its `Type`
+//! attribute and `xAL:DependentLocalityName`). The model must keep all of it.
 
 use nusamai_citygml::{CityGmlElement, CityGmlReader, ParseContext, Value};
 use nusamai_plateau::models::core::Address;
@@ -115,7 +113,6 @@ fn single_locality_name_without_district() {
 
 #[test]
 fn dependent_locality_types_are_kept() {
-    // a consumer picks the district by its Type, so every DependentLocality keeps its own
     let address = parse_address(
         r#"<xAL:Locality>
             <xAL:LocalityName>福島県</xAL:LocalityName>
