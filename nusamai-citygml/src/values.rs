@@ -685,38 +685,63 @@ impl CityGmlElement for Envelope {
     }
 }
 
+/// One `gen:*Attribute` / `gen:genericAttributeSet` element: its name and typed value.
+#[derive(Debug, Deserialize, Serialize)]
+pub enum GenericAttributeItem {
+    String(String, String),
+    Int(String, i64),
+    Double(String, f64),
+    Measure(String, Measure),
+    Code(String, Code),
+    Date(String, Date),
+    Uri(String, Uri),
+    Set(String, GenericAttribute),
+}
+
+/// The generic attributes of a feature, in document order.
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct GenericAttribute {
-    pub string_attrs: Vec<(String, String)>,
-    pub int_attrs: Vec<(String, i64)>,
-    pub double_attrs: Vec<(String, f64)>,
-    pub measure_attrs: Vec<(String, Measure)>,
-    pub code_attrs: Vec<(String, Code)>,
-    pub date_attrs: Vec<(String, Date)>,
-    pub uri_attrs: Vec<(String, Uri)>,
-    pub generic_attr_set: Vec<(String, GenericAttribute)>,
+    pub items: Vec<GenericAttributeItem>,
 }
 
 impl CityGmlElement for GenericAttribute {
     #[inline(never)]
     fn parse<R: BufRead>(&mut self, st: &mut SubTreeReader<R>) -> Result<(), ParseError> {
+        use GenericAttributeItem as Item;
+
         let current_path: &[u8] = &st.current_path();
-        match current_path {
+        let item = match current_path {
             b"gen:stringAttribute" | b"gen:StringAttribute" => {
-                self.string_attrs.push(parse_value(st)?)
+                let (k, v) = parse_value(st)?;
+                Item::String(k, v)
             }
-            b"gen:intAttribute" | b"gen:IntAttribute" => self.int_attrs.push(parse_value(st)?),
+            b"gen:intAttribute" | b"gen:IntAttribute" => {
+                let (k, v) = parse_value(st)?;
+                Item::Int(k, v)
+            }
             b"gen:doubleAttribute" | b"gen:DoubleAttribute" => {
-                self.double_attrs.push(parse_value(st)?)
+                let (k, v) = parse_value(st)?;
+                Item::Double(k, v)
             }
             b"gen:measureAttribute" | b"gen:MeasureAttribute" => {
-                self.measure_attrs.push(parse_value(st)?)
+                let (k, v) = parse_value(st)?;
+                Item::Measure(k, v)
             }
-            b"gen:codeAttribute" | b"gen:CodeAttribute" => self.code_attrs.push(parse_value(st)?),
-            b"gen:dateAttribute" | b"gen:DateAttribute" => self.date_attrs.push(parse_value(st)?),
-            b"gen:uriAttribute" | b"gen:UriAttribute" => self.uri_attrs.push(parse_value(st)?),
+            b"gen:codeAttribute" | b"gen:CodeAttribute" => {
+                let (k, v) = parse_value(st)?;
+                Item::Code(k, v)
+            }
+            b"gen:dateAttribute" | b"gen:DateAttribute" => {
+                let (k, v) = parse_value(st)?;
+                Item::Date(k, v)
+            }
+            b"gen:uriAttribute" | b"gen:UriAttribute" => {
+                let (k, v) = parse_value(st)?;
+                Item::Uri(k, v)
+            }
             b"gen:genericAttributeSet" | b"gen:GenericAttributeSet" => {
-                self.generic_attr_set.push(parse_generic_set(st)?)
+                let (k, v) = parse_generic_set(st)?;
+                Item::Set(k, v)
             }
             _ => {
                 return Err(ParseError::SchemaViolation(format!(
@@ -724,52 +749,32 @@ impl CityGmlElement for GenericAttribute {
                     String::from_utf8_lossy(current_path),
                 )))
             }
-        }
+        };
+        self.items.push(item);
         Ok(())
     }
 
     #[inline(never)]
     fn into_object(self) -> Option<Value> {
+        use GenericAttributeItem as Item;
+
         let mut map = object::Map::default();
-        map.extend(
-            self.string_attrs
-                .into_iter()
-                .map(|(k, v)| (k, Value::String(v))),
-        );
-        map.extend(
-            self.int_attrs
-                .into_iter()
-                .map(|(k, v)| (k, Value::Integer(v))),
-        );
-        map.extend(
-            self.double_attrs
-                .into_iter()
-                .map(|(k, v)| (k, Value::Double(v))),
-        );
-        map.extend(
-            self.measure_attrs
-                .into_iter()
-                .map(|(k, v)| (k, Value::Measure(v))),
-        );
-        map.extend(
-            self.code_attrs
-                .into_iter()
-                .map(|(k, v)| (k, Value::Code(v))),
-        );
-        map.extend(
-            self.date_attrs
-                .into_iter()
-                .map(|(k, v)| (k, Value::Date(v))),
-        );
-        map.extend(self.uri_attrs.into_iter().map(|(k, v)| (k, Value::Uri(v))));
-        map.extend(
-            self.generic_attr_set
-                .into_iter()
-                .flat_map(|(k, v)| match v.into_object() {
-                    Some(Value::Object(data)) => Some((k, Value::Object(data))),
-                    _ => None,
-                }),
-        );
+        for item in self.items {
+            let (k, v) = match item {
+                Item::String(k, v) => (k, Value::String(v)),
+                Item::Int(k, v) => (k, Value::Integer(v)),
+                Item::Double(k, v) => (k, Value::Double(v)),
+                Item::Measure(k, v) => (k, Value::Measure(v)),
+                Item::Code(k, v) => (k, Value::Code(v)),
+                Item::Date(k, v) => (k, Value::Date(v)),
+                Item::Uri(k, v) => (k, Value::Uri(v)),
+                Item::Set(k, v) => match v.into_object() {
+                    Some(Value::Object(data)) => (k, Value::Object(data)),
+                    _ => continue,
+                },
+            };
+            map.insert(k, v);
+        }
 
         if map.is_empty() {
             None

@@ -111,7 +111,7 @@ fn lenient_skips_broken_properties() {
     // the invalid date, the unknown element and the outer generic attribute set are skipped,
     // the rest is kept
     assert_eq!(feature.date, None);
-    assert!(feature.generic_attribute.generic_attr_set.is_empty());
+    assert!(feature.generic_attribute.items.is_empty());
     assert_eq!(feature.name, Some("kept".into()));
 
     // lod2 and lod3 are dropped as a whole, including their valid first polygons and the
