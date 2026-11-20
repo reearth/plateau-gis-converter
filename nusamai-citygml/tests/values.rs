@@ -287,6 +287,70 @@ fn generics() {
 }
 
 #[test]
+fn generics_keep_document_order() {
+    #[citygml_feature(name = "foo:foo")]
+    struct Demo {
+        // The field `generic_attributes` will be automatically generated.
+    }
+
+    // Attributes of different types are interleaved on purpose: the result must follow the
+    // document order, not be grouped by type (strings first, then dates, ...).
+    let data = r#"
+        <foo xmlns:gen="http://www.opengis.net/citygml/generics/2.0">
+            <gen:stringAttribute name="a">
+                <gen:value>1</gen:value>
+            </gen:stringAttribute>
+            <gen:dateAttribute name="b">
+                <gen:value>2019-09-27</gen:value>
+            </gen:dateAttribute>
+            <gen:stringAttribute name="c">
+                <gen:value>3</gen:value>
+            </gen:stringAttribute>
+            <gen:intAttribute name="d">
+                <gen:value>4</gen:value>
+            </gen:intAttribute>
+            <gen:genericAttributeSet name="e">
+                <gen:dateAttribute name="y">
+                    <gen:value>2020-01-02</gen:value>
+                </gen:dateAttribute>
+                <gen:stringAttribute name="x">
+                    <gen:value>5</gen:value>
+                </gen:stringAttribute>
+            </gen:genericAttributeSet>
+            <gen:doubleAttribute name="f">
+                <gen:value>6.5</gen:value>
+            </gen:doubleAttribute>
+            <gen:stringAttribute name="g">
+                <gen:value>7</gen:value>
+            </gen:stringAttribute>
+        </foo>
+    "#;
+
+    let reader = std::io::BufReader::new(std::io::Cursor::new(data));
+    let mut xml_reader = quick_xml::NsReader::from_reader(reader);
+    let context = nusamai_citygml::ParseContext::default();
+    let mut demo = Demo::default();
+    match nusamai_citygml::CityGmlReader::new(context).start_root(&mut xml_reader) {
+        Ok(mut st) => {
+            demo.parse(&mut st).unwrap();
+        }
+        Err(e) => panic!("Err: {e:?}"),
+    };
+
+    let Value::Object(data) = demo.generic_attribute.into_object().unwrap() else {
+        panic!("expected data");
+    };
+    let keys: Vec<&str> = data.attributes.keys().map(String::as_str).collect();
+    assert_eq!(keys, ["a", "b", "c", "d", "e", "f", "g"]);
+
+    let Value::Object(set) = &data.attributes["e"] else {
+        panic!("expected object");
+    };
+    let keys: Vec<&str> = set.attributes.keys().map(String::as_str).collect();
+    assert_eq!(keys, ["y", "x"]);
+}
+
+#[test]
 fn feature_type_issue_with_bounded_by_structure() {
     use nusamai_citygml::geometry::GeometryRefs;
 
